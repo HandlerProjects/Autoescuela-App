@@ -110,6 +110,21 @@ export default function StudentPage() {
     setSubmitting(true)
     setSubmitError('')
 
+    // Comprobar si ya tiene una reserva activa
+    const { data: existing } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('student_id', student.id)
+      .eq('status', 'confirmed')
+      .gte('practice_date', toDateString(new Date()))
+      .single()
+
+    if (existing) {
+      setSubmitError('Ya tienes una práctica reservada. Cancélala antes de hacer una nueva.')
+      setSubmitting(false)
+      return
+    }
+
     const [h, m] = selectedSlot.split(':').map(Number)
     const endMinutes = h * 60 + m + SLOT_DURATION
     const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
