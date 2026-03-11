@@ -5,13 +5,28 @@ import { createClient } from '@/lib/supabase/client'
 import { formatDate } from '@/lib/utils'
 import type { Payment, Student, PaymentStatus } from '@/types'
 
+const RATES = [
+  { concept: 'Matrícula', price: null, description: 'Alta en la autoescuela' },
+  { concept: '5 clases coche', price: null, description: 'Bono 5 prácticas · Coche' },
+  { concept: '5 clases camión', price: null, description: 'Bono 5 prácticas · Camión' },
+  { concept: '10 clases coche', price: null, description: 'Bono 10 prácticas · Coche' },
+  { concept: '10 clases camión', price: null, description: 'Bono 10 prácticas · Camión' },
+  { concept: 'Examen teórico', price: null, description: 'Tasas examen teórico DGT' },
+  { concept: 'Examen práctico', price: null, description: 'Tasas examen práctico DGT' },
+  { concept: 'Tasas DGT', price: null, description: 'Gestión tasas DGT' },
+]
+
 export default function PagosPage() {
   const supabase = createClient()
   const [payments, setPayments] = useState<Payment[]>([])
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [showRates, setShowRates] = useState(false)
   const [filter, setFilter] = useState<'all' | 'pending' | 'paid'>('all')
+  const [rates, setRates] = useState<{ [key: string]: string }>({})
+  const [editingRates, setEditingRates] = useState(false)
+  const [tempRates, setTempRates] = useState<{ [key: string]: string }>({})
 
   // Form
   const [studentId, setStudentId] = useState('')
@@ -21,29 +36,46 @@ export default function PagosPage() {
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const CONCEPTS = [
-    'Matrícula',
-    '5 clases coche',
-    '5 clases camión',
-    '10 clases coche',
-    '10 clases camión',
-    'Examen teórico',
-    'Examen práctico',
-    'Tasas DGT',
-    'Otro',
-  ]
-
   useEffect(() => { fetchData() }, [])
 
   async function fetchData() {
     setLoading(true)
-    const [{ data: paymentsData }, { data: studentsData }] = await Promise.all([
+    const [{ data: paymentsData }, { data: studentsData }, { data: ratesData }] = await Promise.all([
       supabase.from('payments').select('*, student:students(full_name, order_number)').order('created_at', { ascending: false }),
       supabase.from('students').select('*').eq('is_active', true).order('order_number'),
+      supabase.from('rates').select('*'),
     ])
     if (paymentsData) setPayments(paymentsData)
     if (studentsData) setStudents(studentsData)
+    if (ratesData) {
+      const ratesMap: { [key: string]: string } = {}
+      ratesData.forEach(r => { ratesMap[r.concept] = r.price?.toString() ?? '' })
+      setRates(ratesMap)
+      setTempRates(ratesMap)
+    }
     setLoading(false)
+  }
+
+  async function saveRates() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    for (const [concept, price] of Object.entries(tempRates)) {
+      const numPrice = price ? parseFloat(price) : null
+      await supabase.from('rates').upsert({
+        instructor_id: user.id,
+        concept,
+        price: numPrice,
+      }, { onConflict: 'instructor_id,concept' })
+    }
+
+    setRates(tempRates)
+    setEditingRates(false)
+  }
+
+  function selectConcept(c: string) {
+    setConcept(c)
+    if (rates[c]) setAmount(rates[c])
   }
 
   async function handleSubmit() {
@@ -74,10 +106,7 @@ export default function PagosPage() {
   }
 
   async function markAsPaid(id: string) {
-    await supabase.from('payments').update({
-      status: 'paid',
-      paid_at: new Date().toISOString(),
-    }).eq('id', id)
+    await supabase.from('payments').update({ status: 'paid', paid_at: new Date().toISOString() }).eq('id', id)
     setPayments(prev => prev.map(p => p.id === id ? { ...p, status: 'paid' as PaymentStatus, paid_at: new Date().toISOString() } : p))
   }
 
@@ -102,19 +131,98 @@ export default function PagosPage() {
           <h1 className="text-3xl font-black text-white tracking-tight">Pagos</h1>
           <p className="text-sm mt-1" style={{ color: '#6b8ab0' }}>Control de cobros y deudas</p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 font-bold text-sm px-5 py-3 rounded-xl transition text-white"
-          style={{ background: '#0057B8' }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0057B8'}
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          Nuevo cobro
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowRates(!showRates)}
+            className="flex items-center gap-2 font-bold text-sm px-4 py-3 rounded-xl transition"
+            style={{ background: '#0d1829', border: '1px solid #1a2d45', color: '#6b8ab0' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'white'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#6b8ab0'}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+            </svg>
+            Tarifas
+          </button>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 font-bold text-sm px-5 py-3 rounded-xl transition text-white"
+            style={{ background: '#0057B8' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0057B8'}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Nuevo cobro
+          </button>
+        </div>
       </div>
+
+      {/* Panel tarifas */}
+      {showRates && (
+        <div className="rounded-2xl p-6 mb-6" style={{ background: '#0d1829', border: '1px solid #0057B8' }}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-white font-bold">Tarifas de la autoescuela</p>
+              <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>Los precios se autorellenan al seleccionar el concepto · Los precios se muestran sin IVA</p>
+            </div>
+            {!editingRates ? (
+              <button
+                onClick={() => { setEditingRates(true); setTempRates(rates) }}
+                className="text-sm font-bold px-4 py-2 rounded-xl transition"
+                style={{ background: '#0057B820', color: '#0057B8' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#0057B840'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0057B820'}
+              >
+                Editar tarifas
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setEditingRates(false)}
+                  className="text-sm font-bold px-4 py-2 rounded-xl transition"
+                  style={{ background: '#0a1220', color: '#6b8ab0', border: '1px solid #1a2d45' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={saveRates}
+                  className="text-sm font-bold px-4 py-2 rounded-xl transition text-white"
+                  style={{ background: '#0057B8' }}
+                >
+                  Guardar
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-4 gap-3">
+            {RATES.map(rate => (
+              <div key={rate.concept} className="rounded-xl p-3" style={{ background: '#0a1220', border: '1px solid #1a2d45' }}>
+                <p className="text-white text-xs font-bold mb-0.5">{rate.concept}</p>
+                <p className="text-xs mb-2" style={{ color: '#3a5070' }}>{rate.description}</p>
+                {editingRates ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      value={tempRates[rate.concept] ?? ''}
+                      onChange={e => setTempRates(prev => ({ ...prev, [rate.concept]: e.target.value }))}
+                      placeholder="—"
+                      className="w-full rounded-lg px-2 py-1.5 text-white text-sm outline-none"
+                      style={{ background: '#0d1829', border: '1px solid #1a2d45' }}
+                    />
+                    <span className="text-xs font-bold" style={{ color: '#3a5070' }}>€</span>
+                  </div>
+                ) : (
+                  <p className="text-lg font-black" style={{ color: rates[rate.concept] ? '#0057B8' : '#1a2d45' }}>
+                    {rates[rate.concept] ? `${rates[rate.concept]}€` : '* € + IVA'}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-8">
@@ -157,19 +265,23 @@ export default function PagosPage() {
               <label className="block text-xs font-semibold mb-1.5" style={{ color: '#6b8ab0' }}>Concepto</label>
               <select
                 value={concept}
-                onChange={e => setConcept(e.target.value)}
+                onChange={e => selectConcept(e.target.value)}
                 className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
                 style={{ background: '#0a1220', border: '1.5px solid #1a2d45', color: concept ? 'white' : '#3a5070' }}
               >
                 <option value="">Seleccionar concepto</option>
-                {CONCEPTS.map(c => (
-                  <option key={c} value={c}>{c}</option>
+                {RATES.map(r => (
+                  <option key={r.concept} value={r.concept}>
+                    {r.concept}{rates[r.concept] ? ` · ${rates[r.concept]}€` : ''}
+                  </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#6b8ab0' }}>Importe (€)</label>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#6b8ab0' }}>
+                Importe (€) <span className="font-normal" style={{ color: '#3a5070' }}>+ IVA no incluido</span>
+              </label>
               <input
                 type="number"
                 value={amount}
@@ -288,6 +400,7 @@ export default function PagosPage() {
                     </td>
                     <td className="px-5 py-4">
                       <p className="text-white font-black text-lg">{payment.amount.toFixed(0)}€</p>
+                      <p className="text-xs" style={{ color: '#3a5070' }}>+ IVA</p>
                     </td>
                     <td className="px-5 py-4">
                       {payment.due_date ? (
