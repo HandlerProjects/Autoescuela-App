@@ -151,6 +151,15 @@ export default function AlumnosPage() {
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-2 justify-end">
+                      <Link
+                        href={`/admin/alumnos/${student.id}`}
+                        className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all duration-150"
+                        style={{ background: '#0f1c2e', color: '#a0b8d0' }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#1a2d45'}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0f1c2e'}
+                      >
+                        Ver perfil
+                      </Link>
                       <button
                         onClick={() => copyLink(student.token)}
                         className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all duration-150"
