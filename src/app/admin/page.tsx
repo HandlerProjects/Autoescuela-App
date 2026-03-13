@@ -33,8 +33,15 @@ export default function AdminPage() {
     fetchBookings()
   }
 
-  async function cancelBooking(id: string) {
-    await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', id)
+  async function cancelBooking(booking: Booking) {
+    await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', booking.id)
+    if (booking.calendar_event_id) {
+      fetch('/api/calendar', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: booking.calendar_event_id }),
+      }).catch(() => {})
+    }
     fetchBookings()
   }
 
@@ -171,7 +178,7 @@ export default function AdminPage() {
                     ✓ Completar
                   </button>
                   <button
-                    onClick={() => cancelBooking(booking.id)}
+                    onClick={() => cancelBooking(booking)}
                     className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all duration-150"
                     style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}
                     onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.2)'}
