@@ -55,12 +55,15 @@ export function toDateString(date: Date): string {
   return date.toISOString().split('T')[0]
 }
 
-// ── Genera los slots de un día según tipo de práctica ─────────────────────────
-// (versión cliente, sin acceso a BD — para preview visual)
-export function generateTimeSlots(practiceType: 'car' | 'truck'): string[] {
+// ── Genera los slots de un día según tipo y subtipo de práctica ───────────────
+// Coche: 45 min + 10 min gap | Camión pista: 45+10 | Camión circulación: 45+30
+export function generateTimeSlots(
+  practiceType: 'car' | 'truck',
+  practiceSubtype?: 'pista' | 'circulacion' | null
+): string[] {
   const slots: string[] = []
-  const duration = 45 // minutos
-  const breakTime = practiceType === 'car' ? 10 : 10
+  const duration = 45
+  const breakTime = practiceType === 'truck' && practiceSubtype === 'circulacion' ? 30 : 10
 
   const sessions = [
     { start: '08:00', end: '13:30' },
@@ -75,12 +78,8 @@ export function generateTimeSlots(practiceType: 'car' | 'truck'): string[] {
     while (true) {
       const startTotal = hours * 60 + minutes
       const slotEnd = startTotal + duration
-
       if (slotEnd > endTotal) break
-
-      const startStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
-      slots.push(startStr)
-
+      slots.push(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`)
       const nextStart = slotEnd + breakTime
       hours = Math.floor(nextStart / 60)
       minutes = nextStart % 60
@@ -91,8 +90,11 @@ export function generateTimeSlots(practiceType: 'car' | 'truck'): string[] {
 }
 
 // ── Etiqueta legible del tipo de práctica ─────────────────────────────────────
-export function getPracticeLabel(type: 'car' | 'truck'): string {
-  return type === 'car' ? 'Coche' : 'Camión'
+export function getPracticeLabel(type: 'car' | 'truck', subtype?: 'pista' | 'circulacion' | null): string {
+  if (type === 'car') return 'Coche'
+  if (subtype === 'pista') return 'Camión Pista'
+  if (subtype === 'circulacion') return 'Camión Circulación'
+  return 'Camión'
 }
 
 // ── Etiqueta legible del estado de reserva ────────────────────────────────────

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, formatTime, getDayName, toDateString, getPracticeLabel, generateTimeSlots } from '@/lib/utils'
-import type { Student, Booking, PracticeType } from '@/types'
+import type { Student, Booking, PracticeType, PracticeSubtype } from '@/types'
 
 const SLOT_DURATION = 45
 const MIN_ADVANCE_HOURS = 24
@@ -48,8 +48,11 @@ export default function StudentPage() {
   const [myBookings, setMyBookings] = useState<Booking[]>([])
   const [takenSlots, setTakenSlots] = useState<{ date: string; start: string; type: PracticeType }[]>([])
 
+  const [allBookings, setAllBookings] = useState<Booking[]>([])
+
   const [step, setStep] = useState<Step>('type')
   const [selectedType, setSelectedType] = useState<PracticeType>('car')
+  const [selectedSubtype, setSelectedSubtype] = useState<PracticeSubtype | null>(null)
   const [selectedDate, setSelectedDate] = useState<string>('')
   const [selectedSlot, setSelectedSlot] = useState<string>('')
   const [submitting, setSubmitting] = useState(false)
@@ -77,7 +80,7 @@ export default function StudentPage() {
 
     setStudent(data)
     setSelectedType(data.practice_types[0])
-    await Promise.all([fetchMyBookings(data.id), fetchTakenSlots(data.instructor_id)])
+    await Promise.all([fetchMyBookings(data.id), fetchTakenSlots(data.instructor_id), fetchAllBookings(data.id)])
     setLoading(false)
   }
 
@@ -91,6 +94,15 @@ export default function StudentPage() {
       .neq('status', 'cancelled')
       .order('practice_date', { ascending: true })
     if (data) setMyBookings(data)
+  }
+
+  async function fetchAllBookings(studentId: string) {
+    const { data } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('student_id', studentId)
+      .order('practice_date', { ascending: false })
+    if (data) setAllBookings(data)
   }
 
   async function fetchTakenSlots(instructorId: string) {
@@ -116,8 +128,8 @@ export default function StudentPage() {
     return takenSlots.some(t => t.date === date && t.start === slot && t.type === type)
   }
 
-  function getSlotsForDay(date: string, type: PracticeType) {
-    return generateTimeSlots(type).map(slot => ({
+  function getSlotsForDay(date: string, type: PracticeType, subtype: PracticeSubtype | null) {
+    return generateTimeSlots(type, subtype).map(slot => ({
       time: slot,
       taken: isSlotTaken(date, slot, type) || isSlotTooSoon(date, slot),
     }))
@@ -186,6 +198,7 @@ export default function StudentPage() {
       start_time: selectedSlot,
       end_time: endTime,
       practice_type: selectedType,
+      practice_subtype: selectedSubtype,
       status: 'confirmed',
     })
 
@@ -226,7 +239,7 @@ export default function StudentPage() {
         .catch(() => {})
     }
 
-    await Promise.all([fetchMyBookings(student.id), fetchTakenSlots(student.instructor_id)])
+    await Promise.all([fetchMyBookings(student.id), fetchTakenSlots(student.instructor_id), fetchAllBookings(student.id)])
     setStep('success')
     setSubmitting(false)
   }
@@ -235,6 +248,7 @@ export default function StudentPage() {
     setStep('type')
     setSelectedDate('')
     setSelectedSlot('')
+    setSelectedSubtype(null)
     setSubmitError('')
   }
 
@@ -338,7 +352,7 @@ export default function StudentPage() {
                           {getDayName(booking.practice_date)}, {formatDate(booking.practice_date)}
                         </p>
                         <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>
-                          {formatTime(booking.start_time)} – {formatTime(booking.end_time)} · {getPracticeLabel(booking.practice_type)}
+                          {formatTime(booking.start_time)} – {formatTime(booking.end_time)} · {getPracticeLabel(booking.practice_type, booking.practice_subtype)}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
@@ -436,6 +450,64 @@ export default function StudentPage() {
           </div>
         )}
 
+        {/* Resumen de prácticas */}
+        {(() => {
+          const completed = allBookings.filter(b => b.status === 'completed').length
+          const cancelled = allBookings.filter(b => b.status === 'cancelled').length
+          const carDone = allBookings.filter(b => b.status === 'completed' && b.practice_type === 'car').length
+          const truckPista = allBookings.filter(b => b.status === 'completed' && b.practice_type === 'truck' && b.practice_subtype === 'pista').length
+          const truckCirc = allBookings.filter(b => b.status === 'completed' && b.practice_type === 'truck' && b.practice_subtype === 'circulacion').length
+          const truckOther = allBookings.filter(b => b.status === 'completed' && b.practice_type === 'truck' && !b.practice_subtype).length
+          if (completed === 0 && cancelled === 0) return null
+          return (
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: '#0057B8' }}>Mis estadísticas</p>
+              <div className="rounded-xl p-4" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  {[
+                    { label: 'Completadas', value: completed, color: '#34d399' },
+                    { label: 'Canceladas', value: cancelled, color: '#f87171' },
+                    { label: 'Total', value: allBookings.length, color: 'white' },
+                  ].map(s => (
+                    <div key={s.label} className="text-center">
+                      <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+                {completed > 0 && (
+                  <div className="pt-3 space-y-1.5" style={{ borderTop: '1px solid #1a2d45' }}>
+                    {carDone > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span style={{ color: '#6b8ab0' }}>🚗 Coche</span>
+                        <span className="font-bold text-white">{carDone} prácticas</span>
+                      </div>
+                    )}
+                    {truckPista > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span style={{ color: '#6b8ab0' }}>🚛 Camión Pista</span>
+                        <span className="font-bold text-white">{truckPista} prácticas</span>
+                      </div>
+                    )}
+                    {truckCirc > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span style={{ color: '#6b8ab0' }}>🚛 Camión Circulación</span>
+                        <span className="font-bold text-white">{truckCirc} prácticas</span>
+                      </div>
+                    )}
+                    {truckOther > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span style={{ color: '#6b8ab0' }}>🚛 Camión</span>
+                        <span className="font-bold text-white">{truckOther} prácticas</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
         {/* Nueva reserva */}
         <div>
           <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: '#0057B8' }}>
@@ -506,7 +578,7 @@ export default function StudentPage() {
                 {getDayName(selectedDate)}, {formatDate(selectedDate)}
               </p>
               <p className="text-sm" style={{ color: '#6b8ab0' }}>
-                {selectedSlot} · {getPracticeLabel(selectedType)} · 45 min
+                {selectedSlot} · {getPracticeLabel(selectedType, selectedSubtype)} · 45 min
               </p>
               <button
                 onClick={resetBooking}
@@ -524,34 +596,62 @@ export default function StudentPage() {
           {step === 'type' && (
             <div className="rounded-2xl p-5 space-y-4 step-enter" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
               <p className="text-white font-bold">¿Qué tipo de práctica?</p>
-              <div className="grid grid-cols-2 gap-3">
+
+              {/* Opciones de tipo */}
+              <div className={`grid gap-3 ${student.practice_types.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 {student.practice_types.map(type => (
                   <button
                     key={type}
-                    onClick={() => setSelectedType(type)}
+                    onClick={() => { setSelectedType(type); if (type === 'car') setSelectedSubtype(null) }}
                     className="py-4 rounded-xl text-sm font-bold transition-all duration-200"
                     style={{
-                      background: selectedType === type
-                        ? type === 'car' ? '#0057B820' : '#38bdf820'
-                        : '#0a1220',
-                      border: `2px solid ${selectedType === type
-                        ? type === 'car' ? '#0057B8' : '#38bdf8'
-                        : '#1a2d45'}`,
-                      color: selectedType === type
-                        ? type === 'car' ? '#0057B8' : '#38bdf8'
-                        : '#3a5070',
+                      background: selectedType === type ? (type === 'car' ? '#0057B820' : '#38bdf820') : '#0a1220',
+                      border: `2px solid ${selectedType === type ? (type === 'car' ? '#0057B8' : '#38bdf8') : '#1a2d45'}`,
+                      color: selectedType === type ? (type === 'car' ? '#0057B8' : '#38bdf8') : '#3a5070',
                     }}
                   >
-                    {type === 'car' ? '🚗' : '🚛'} {getPracticeLabel(type)}
+                    {type === 'car' ? '🚗 Coche' : '🚛 Camión'}
                   </button>
                 ))}
               </div>
+
+              {/* Subtipo — solo si camión seleccionado */}
+              {selectedType === 'truck' && (
+                <div>
+                  <p className="text-xs font-semibold mb-2" style={{ color: '#6b8ab0' }}>Modalidad</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {([
+                      { value: 'pista' as PracticeSubtype, label: 'Pista', desc: '10 min pausa' },
+                      { value: 'circulacion' as PracticeSubtype, label: 'Circulación', desc: '30 min pausa' },
+                    ]).map(({ value, label, desc }) => (
+                      <button
+                        key={value}
+                        onClick={() => setSelectedSubtype(value)}
+                        className="py-3 rounded-xl text-sm font-bold transition-all duration-200"
+                        style={{
+                          background: selectedSubtype === value ? '#38bdf820' : '#0a1220',
+                          border: `2px solid ${selectedSubtype === value ? '#38bdf8' : '#1a2d45'}`,
+                          color: selectedSubtype === value ? '#38bdf8' : '#3a5070',
+                        }}
+                      >
+                        <span className="block">{label}</span>
+                        <span className="text-xs font-normal opacity-70">{desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={() => setStep('date')}
+                disabled={selectedType === 'truck' && !selectedSubtype}
                 className="w-full py-3 rounded-xl text-sm font-bold text-white transition"
-                style={{ background: '#0057B8' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0057B8'}
+                style={{
+                  background: selectedType === 'truck' && !selectedSubtype ? '#1a2d45' : '#0057B8',
+                  color: selectedType === 'truck' && !selectedSubtype ? '#3a5070' : 'white',
+                }}
+                onMouseEnter={e => { if (!(selectedType === 'truck' && !selectedSubtype)) (e.currentTarget as HTMLElement).style.background = '#004494' }}
+                onMouseLeave={e => { if (!(selectedType === 'truck' && !selectedSubtype)) (e.currentTarget as HTMLElement).style.background = '#0057B8' }}
               >
                 Continuar →
               </button>
@@ -572,7 +672,7 @@ export default function StudentPage() {
               <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
                 {workingDays.map(day => {
                   const dateStr = toDateString(day)
-                  const slots = getSlotsForDay(dateStr, selectedType)
+                  const slots = getSlotsForDay(dateStr, selectedType, selectedSubtype)
                   const available = slots.filter(s => !s.taken).length
                   const isSelected = dateStr === selectedDate
 
@@ -628,7 +728,7 @@ export default function StudentPage() {
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: '#0057B8' }}>Mañana</p>
                 <div className="grid grid-cols-3 gap-2">
-                  {getSlotsForDay(selectedDate, selectedType)
+                  {getSlotsForDay(selectedDate, selectedType, selectedSubtype)
                     .filter(s => s.time < '14:00')
                     .map(({ time, taken }) => (
                       <button
@@ -654,7 +754,7 @@ export default function StudentPage() {
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: '#0057B8' }}>Tarde</p>
                 <div className="grid grid-cols-3 gap-2">
-                  {getSlotsForDay(selectedDate, selectedType)
+                  {getSlotsForDay(selectedDate, selectedType, selectedSubtype)
                     .filter(s => s.time >= '14:00')
                     .map(({ time, taken }) => (
                       <button
@@ -700,7 +800,7 @@ export default function StudentPage() {
                       return `${selectedSlot} – ${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`
                     })()
                   },
-                  { label: 'Tipo', value: getPracticeLabel(selectedType) },
+                  { label: 'Tipo', value: getPracticeLabel(selectedType, selectedSubtype) },
                   { label: 'Duración', value: '45 minutos' },
                 ].map(({ label, value }) => (
                   <div key={label} className="flex justify-between items-center text-sm">
