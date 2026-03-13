@@ -43,6 +43,9 @@ export default function NuevoAlumnoPage() {
     if (!user) { router.push('/'); return }
 
     const token = generateStudentToken()
+    const num = parseInt(orderNumber).toString().padStart(3, '0')
+    const loginCode = `Alumno-${num}`
+    const loginPin = num
 
     const { error: insertError } = await supabase.from('students').insert({
       instructor_id: user.id,
@@ -53,6 +56,8 @@ export default function NuevoAlumnoPage() {
       email: email.trim() || null,
       practice_types: practiceTypes,
       token,
+      login_code: loginCode,
+      login_pin: loginPin,
     })
 
     if (insertError) {

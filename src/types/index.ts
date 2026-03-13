@@ -22,6 +22,8 @@ export interface Student {
   practice_types: PracticeType[]
   phone: string | null
   email: string | null
+  login_code: string | null
+  login_pin: string | null
   is_active: boolean
   max_concurrent_bookings: number
   alert_days_inactive: number
