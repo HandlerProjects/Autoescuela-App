@@ -46,7 +46,7 @@ export default function StudentPage() {
   const [notFound, setNotFound] = useState(false)
   const [loading, setLoading] = useState(true)
   const [myBookings, setMyBookings] = useState<Booking[]>([])
-  const [takenSlots, setTakenSlots] = useState<{ date: string; start: string; type: PracticeType }[]>([])
+  const [takenSlots, setTakenSlots] = useState<{ date: string; start: string; type: PracticeType; subtype: PracticeSubtype | null }[]>([])
 
   const [allBookings, setAllBookings] = useState<Booking[]>([])
 
@@ -110,7 +110,7 @@ export default function StudentPage() {
     const to = toDateString(workingDays[workingDays.length - 1])
     const { data } = await supabase
       .from('bookings')
-      .select('practice_date, start_time, practice_type')
+      .select('practice_date, start_time, practice_type, practice_subtype')
       .eq('instructor_id', instructorId)
       .gte('practice_date', from)
       .lte('practice_date', to)
@@ -120,18 +120,35 @@ export default function StudentPage() {
         date: b.practice_date,
         start: b.start_time.substring(0, 5),
         type: b.practice_type,
+        subtype: b.practice_subtype ?? null,
       })))
     }
   }
 
-  function isSlotTaken(date: string, slot: string, type: PracticeType) {
-    return takenSlots.some(t => t.date === date && t.start === slot && t.type === type)
+  function toMins(t: string): number {
+    const [h, m] = t.split(':').map(Number)
+    return h * 60 + m
+  }
+
+  function breakFor(type: PracticeType, subtype: PracticeSubtype | null): number {
+    return type === 'truck' && subtype === 'circulacion' ? 30 : 10
+  }
+
+  function isSlotBlocked(date: string, slotStart: string, slotType: PracticeType, slotSubtype: PracticeSubtype | null): boolean {
+    const sStart = toMins(slotStart)
+    const sEnd = sStart + SLOT_DURATION + breakFor(slotType, slotSubtype)
+    return takenSlots.some(t => {
+      if (t.date !== date) return false
+      const bStart = toMins(t.start)
+      const bEnd = bStart + SLOT_DURATION + breakFor(t.type, t.subtype)
+      return bStart < sEnd && sStart < bEnd
+    })
   }
 
   function getSlotsForDay(date: string, type: PracticeType, subtype: PracticeSubtype | null) {
     return generateTimeSlots(type, subtype).map(slot => ({
       time: slot,
-      taken: isSlotTaken(date, slot, type) || isSlotTooSoon(date, slot),
+      taken: isSlotBlocked(date, slot, type, subtype) || isSlotTooSoon(date, slot),
     }))
   }
 
