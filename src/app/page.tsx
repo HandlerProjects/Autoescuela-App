@@ -147,7 +147,19 @@ export default function LoginPage() {
             </button>
           </div>
 
-          <p className="text-center text-xs mt-8" style={{ color: '#3a5070' }}>
+          <div className="mt-8 pt-6 text-center" style={{ borderTop: '1px solid #1a2d45' }}>
+            <p className="text-xs mb-3" style={{ color: '#3a5070' }}>¿Eres alumno?</p>
+            <a
+              href="/alumno"
+              className="inline-block w-full py-3 rounded-xl text-sm font-bold transition-all duration-200"
+              style={{ background: '#0f1c2e', color: '#6b8ab0', border: '1.5px solid #1a2d45' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#0057B8'; (e.currentTarget as HTMLElement).style.color = 'white' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#1a2d45'; (e.currentTarget as HTMLElement).style.color = '#6b8ab0' }}
+            >
+              Acceder como alumno
+            </a>
+          </div>
+          <p className="text-center text-xs mt-4" style={{ color: '#3a5070' }}>
             Auto-Escuela Bahillo · Palencia
           </p>
         </div>
