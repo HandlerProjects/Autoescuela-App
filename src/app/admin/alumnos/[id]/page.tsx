@@ -23,6 +23,7 @@ export default function AlumnoPerfilPage() {
   const [editEmail, setEditEmail] = useState(false)
   const [email, setEmail] = useState('')
   const [savingEmail, setSavingEmail] = useState(false)
+  const [savingTypes, setSavingTypes] = useState(false)
 
   useEffect(() => { fetchData() }, [id])
 
@@ -54,6 +55,20 @@ export default function AlumnoPerfilPage() {
     setStudent(prev => prev ? { ...prev, phone: phone.trim() || null } : prev)
     setSavingPhone(false)
     setEditPhone(false)
+  }
+
+  async function togglePracticeType(type: 'car' | 'truck') {
+    if (!student) return
+    const has = student.practice_types.includes(type)
+    // Evitar dejar el array vacío
+    if (has && student.practice_types.length === 1) return
+    const newTypes = has
+      ? student.practice_types.filter(t => t !== type)
+      : [...student.practice_types, type]
+    setSavingTypes(true)
+    await supabase.from('students').update({ practice_types: newTypes }).eq('id', id)
+    setStudent(prev => prev ? { ...prev, practice_types: newTypes } : prev)
+    setSavingTypes(false)
   }
 
   async function saveEmail() {
@@ -147,16 +162,30 @@ export default function AlumnoPerfilPage() {
             </div>
 
             <div>
-              <p className="text-xs font-semibold mb-1" style={{ color: '#3a5070' }}>Prácticas</p>
-              <div className="flex gap-1.5 flex-wrap">
-                {student.practice_types.map(type => (
-                  <span key={type} className="text-xs px-2.5 py-1 rounded-full font-bold" style={{
-                    background: type === 'car' ? '#0057B820' : '#38bdf820',
-                    color: type === 'car' ? '#0057B8' : '#38bdf8',
-                  }}>
-                    {getPracticeLabel(type)}
-                  </span>
-                ))}
+              <p className="text-xs font-semibold mb-1.5" style={{ color: '#3a5070' }}>Prácticas habilitadas</p>
+              <div className="flex gap-2">
+                {(['car', 'truck'] as const).map(type => {
+                  const active = student.practice_types.includes(type)
+                  const isOnly = student.practice_types.length === 1 && active
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => togglePracticeType(type)}
+                      disabled={savingTypes || isOnly}
+                      title={isOnly ? 'Debe tener al menos un tipo' : undefined}
+                      className="flex-1 py-2 rounded-xl text-xs font-bold transition"
+                      style={{
+                        background: active ? (type === 'car' ? '#0057B820' : '#38bdf820') : '#0a1220',
+                        border: `1.5px solid ${active ? (type === 'car' ? '#0057B8' : '#38bdf8') : '#1a2d45'}`,
+                        color: active ? (type === 'car' ? '#0057B8' : '#38bdf8') : '#3a5070',
+                        opacity: savingTypes ? 0.6 : 1,
+                        cursor: isOnly ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {type === 'car' ? '🚗 Coche' : '🚛 Camión'}
+                    </button>
+                  )
+                })}
               </div>
             </div>
 
