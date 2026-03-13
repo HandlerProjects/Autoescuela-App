@@ -21,6 +21,7 @@ export interface Student {
   token: string
   practice_types: PracticeType[]
   phone: string | null
+  email: string | null
   is_active: boolean
   max_concurrent_bookings: number
   alert_days_inactive: number
@@ -40,6 +41,7 @@ export interface Booking {
   confirmed_by_student: boolean
   no_show: boolean
   notes: string | null
+  calendar_event_id: string | null
   created_at: string
   student?: Student
 }

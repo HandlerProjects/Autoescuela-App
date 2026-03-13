@@ -20,6 +20,9 @@ export default function AlumnoPerfilPage() {
   const [editPhone, setEditPhone] = useState(false)
   const [phone, setPhone] = useState('')
   const [savingPhone, setSavingPhone] = useState(false)
+  const [editEmail, setEditEmail] = useState(false)
+  const [email, setEmail] = useState('')
+  const [savingEmail, setSavingEmail] = useState(false)
 
   useEffect(() => { fetchData() }, [id])
 
@@ -32,6 +35,7 @@ export default function AlumnoPerfilPage() {
     if (!studentData) { router.push('/admin/alumnos'); return }
     setStudent(studentData)
     setPhone(studentData.phone ?? '')
+    setEmail(studentData.email ?? '')
     if (bookingsData) setBookings(bookingsData)
     setLoading(false)
   }
@@ -50,6 +54,15 @@ export default function AlumnoPerfilPage() {
     setStudent(prev => prev ? { ...prev, phone: phone.trim() || null } : prev)
     setSavingPhone(false)
     setEditPhone(false)
+  }
+
+  async function saveEmail() {
+    if (!student) return
+    setSavingEmail(true)
+    await supabase.from('students').update({ email: email.trim() || null }).eq('id', id)
+    setStudent(prev => prev ? { ...prev, email: email.trim() || null } : prev)
+    setSavingEmail(false)
+    setEditEmail(false)
   }
 
   async function toggleActive() {
@@ -210,6 +223,57 @@ export default function AlumnoPerfilPage() {
             ) : (
               <p className="text-sm font-bold" style={{ color: student.phone ? 'white' : '#3a5070' }}>
                 {student.phone ?? 'Sin teléfono'}
+              </p>
+            )}
+          </div>
+
+          {/* Email */}
+          <div className="rounded-2xl p-5" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#0057B8' }}>Email</p>
+              {!editEmail && (
+                <button
+                  onClick={() => setEditEmail(true)}
+                  className="text-xs font-semibold transition"
+                  style={{ color: '#3a5070' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'white'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#3a5070'}
+                >
+                  Editar
+                </button>
+              )}
+            </div>
+            {editEmail ? (
+              <div className="space-y-2">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="alumno@correo.com"
+                  className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
+                  style={{ background: '#0a1220', border: '1.5px solid #0057B8' }}
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setEditEmail(false)}
+                    className="flex-1 py-2 rounded-lg text-xs font-bold transition"
+                    style={{ background: '#0a1220', color: '#6b8ab0', border: '1px solid #1a2d45' }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={saveEmail}
+                    disabled={savingEmail}
+                    className="flex-1 py-2 rounded-lg text-xs font-bold text-white transition"
+                    style={{ background: '#0057B8' }}
+                  >
+                    {savingEmail ? 'Guardando...' : 'Guardar'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm font-bold break-all" style={{ color: student.email ? 'white' : '#3a5070' }}>
+                {student.email ?? 'Sin email'}
               </p>
             )}
           </div>

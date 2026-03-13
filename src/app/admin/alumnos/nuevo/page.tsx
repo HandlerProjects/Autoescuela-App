@@ -15,6 +15,7 @@ export default function NuevoAlumnoPage() {
   const [fullName, setFullName] = useState('')
   const [orderNumber, setOrderNumber] = useState('')
   const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
   const [practiceTypes, setPracticeTypes] = useState<PracticeType[]>(['car'])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -49,6 +50,7 @@ export default function NuevoAlumnoPage() {
       full_name: fullName.trim(),
       order_number: parseInt(orderNumber),
       phone: phone.trim() || null,
+      email: email.trim() || null,
       practice_types: practiceTypes,
       token,
     })
@@ -144,13 +146,30 @@ export default function NuevoAlumnoPage() {
         {/* Teléfono */}
         <div>
           <label className="block text-sm font-semibold mb-1.5" style={{ color: '#a0b8d0' }}>
-            Teléfono <span className="font-normal text-xs" style={{ color: '#3a5070' }}>(opcional · recordatorios WhatsApp)</span>
+            Teléfono <span className="font-normal text-xs" style={{ color: '#3a5070' }}>(opcional)</span>
           </label>
           <input
             type="tel"
             value={phone}
             onChange={e => setPhone(e.target.value)}
             placeholder="612 345 678"
+            className="w-full rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200"
+            style={{ background: '#0a1220', border: '1.5px solid #1a2d45' }}
+            onFocus={e => e.target.style.borderColor = '#0057B8'}
+            onBlur={e => e.target.style.borderColor = '#1a2d45'}
+          />
+        </div>
+
+        {/* Email */}
+        <div>
+          <label className="block text-sm font-semibold mb-1.5" style={{ color: '#a0b8d0' }}>
+            Email <span className="font-normal text-xs" style={{ color: '#3a5070' }}>(opcional · notificaciones)</span>
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="alumno@correo.com"
             className="w-full rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200"
             style={{ background: '#0a1220', border: '1.5px solid #1a2d45' }}
             onFocus={e => e.target.style.borderColor = '#0057B8'}

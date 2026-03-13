@@ -7,6 +7,7 @@ import { formatDate, formatTime, getDayName, toDateString, getPracticeLabel, gen
 import type { Student, Booking, PracticeType } from '@/types'
 
 const SLOT_DURATION = 45
+const MIN_ADVANCE_HOURS = 24
 
 function getNextWorkingDays(count: number): Date[] {
   const days: Date[] = []
@@ -22,7 +23,19 @@ function getNextWorkingDays(count: number): Date[] {
   return days
 }
 
+function hoursUntil(dateStr: string, timeStr: string): number {
+  const dt = new Date(`${dateStr}T${timeStr}:00`)
+  return (dt.getTime() - Date.now()) / (1000 * 60 * 60)
+}
+
+function isSlotTooSoon(dateStr: string, timeStr: string): boolean {
+  return hoursUntil(dateStr, timeStr) < MIN_ADVANCE_HOURS
+}
+
 type Step = 'type' | 'date' | 'time' | 'confirm' | 'success'
+
+const STEP_ORDER: Step[] = ['type', 'date', 'time', 'confirm']
+const STEP_LABELS = ['Tipo', 'Día', 'Hora', 'Confirmar']
 
 export default function StudentPage() {
   const params = useParams()
@@ -41,6 +54,11 @@ export default function StudentPage() {
   const [selectedSlot, setSelectedSlot] = useState<string>('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
+
+  // Cancel state
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState('')
 
   const workingDays = getNextWorkingDays(21)
 
@@ -101,8 +119,41 @@ export default function StudentPage() {
   function getSlotsForDay(date: string, type: PracticeType) {
     return generateTimeSlots(type).map(slot => ({
       time: slot,
-      taken: isSlotTaken(date, slot, type),
+      taken: isSlotTaken(date, slot, type) || isSlotTooSoon(date, slot),
     }))
+  }
+
+  async function cancelBooking(booking: Booking) {
+    setCancelling(true)
+    setCancelError('')
+
+    const isLate = hoursUntil(booking.practice_date, booking.start_time.substring(0, 5)) < MIN_ADVANCE_HOURS
+    const updateData: Record<string, unknown> = { status: 'cancelled' }
+    if (isLate) updateData.no_show = true
+
+    const { error } = await supabase
+      .from('bookings')
+      .update(updateData)
+      .eq('id', booking.id)
+
+    if (error) {
+      setCancelError('No se pudo cancelar. Inténtalo de nuevo.')
+      setCancelling(false)
+      return
+    }
+
+    // Eliminar evento de Google Calendar si existe
+    if (booking.calendar_event_id) {
+      fetch('/api/calendar', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: booking.calendar_event_id }),
+      }).catch(() => {})
+    }
+
+    setCancellingId(null)
+    await Promise.all([fetchMyBookings(student!.id), fetchTakenSlots(student!.instructor_id)])
+    setCancelling(false)
   }
 
   async function confirmBooking() {
@@ -110,7 +161,6 @@ export default function StudentPage() {
     setSubmitting(true)
     setSubmitError('')
 
-    // Comprobar si ya tiene una reserva activa
     const { data: existing } = await supabase
       .from('bookings')
       .select('id')
@@ -145,8 +195,38 @@ export default function StudentPage() {
       return
     }
 
-    await fetchMyBookings(student.id)
-    await fetchTakenSlots(student.instructor_id)
+    // Obtener el ID de la reserva recién creada y crear evento en Google Calendar
+    const { data: newBooking } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('student_id', student.id)
+      .eq('practice_date', selectedDate)
+      .eq('start_time', selectedSlot)
+      .single()
+
+    if (newBooking) {
+      fetch('/api/calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: newBooking.id,
+          studentName: student.full_name,
+          practiceDate: selectedDate,
+          startTime: selectedSlot,
+          endTime: endTime,
+          practiceType: selectedType,
+        }),
+      })
+        .then(r => r.json())
+        .then(({ eventId }) => {
+          if (eventId) {
+            supabase.from('bookings').update({ calendar_event_id: eventId }).eq('id', newBooking.id)
+          }
+        })
+        .catch(() => {})
+    }
+
+    await Promise.all([fetchMyBookings(student.id), fetchTakenSlots(student.instructor_id)])
     setStep('success')
     setSubmitting(false)
   }
@@ -186,8 +266,29 @@ export default function StudentPage() {
     )
   }
 
+  const currentStepIndex = STEP_ORDER.indexOf(step)
+
   return (
     <div className="min-h-screen pb-12" style={{ background: '#0a0f1a' }}>
+
+      {/* Keyframes para animaciones */}
+      <style>{`
+        @keyframes stepFadeUp {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes confirmExpand {
+          from { opacity: 0; max-height: 0; }
+          to   { opacity: 1; max-height: 300px; }
+        }
+        .step-enter {
+          animation: stepFadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .confirm-expand {
+          overflow: hidden;
+          animation: confirmExpand 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+      `}</style>
 
       {/* Header */}
       <div style={{ background: '#0d1829', borderBottom: '1px solid #1a2d45' }}>
@@ -213,40 +314,189 @@ export default function StudentPage() {
               Mis próximas prácticas
             </p>
             <div className="space-y-2">
-              {myBookings.map(booking => (
-                <div
-                  key={booking.id}
-                  className="rounded-xl px-4 py-3 flex items-center gap-3"
-                  style={{ background: '#0d1829', border: '1px solid #1a2d45' }}
-                >
-                  <div className="w-1 h-10 rounded-full flex-shrink-0" style={{ background: booking.practice_type === 'car' ? '#0057B8' : '#38bdf8' }} />
-                  <div className="flex-1">
-                    <p className="text-white text-sm font-bold">
-                      {getDayName(booking.practice_date)}, {formatDate(booking.practice_date)}
-                    </p>
-                    <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>
-                      {formatTime(booking.start_time)} – {formatTime(booking.end_time)} · {getPracticeLabel(booking.practice_type)}
-                    </p>
+              {myBookings.map(booking => {
+                const isConfirming = cancellingId === booking.id
+                const isLateCancel = hoursUntil(booking.practice_date, booking.start_time.substring(0, 5)) < MIN_ADVANCE_HOURS
+
+                return (
+                  <div
+                    key={booking.id}
+                    className="rounded-xl overflow-hidden transition-all duration-200"
+                    style={{
+                      background: '#0d1829',
+                      border: `1px solid ${isConfirming ? 'rgba(239,68,68,0.3)' : '#1a2d45'}`,
+                    }}
+                  >
+                    {/* Fila principal */}
+                    <div className="px-4 py-3 flex items-center gap-3">
+                      <div
+                        className="w-1 h-10 rounded-full flex-shrink-0"
+                        style={{ background: booking.practice_type === 'car' ? '#0057B8' : '#38bdf8' }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-bold">
+                          {getDayName(booking.practice_date)}, {formatDate(booking.practice_date)}
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>
+                          {formatTime(booking.start_time)} – {formatTime(booking.end_time)} · {getPracticeLabel(booking.practice_type)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {!isConfirming && (
+                          <>
+                            <span
+                              className="text-xs font-bold px-2.5 py-1 rounded-full"
+                              style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399' }}
+                            >
+                              Confirmada
+                            </span>
+                            <button
+                              onClick={() => { setCancellingId(booking.id); setCancelError('') }}
+                              className="text-xs px-2.5 py-1 rounded-full font-bold"
+                              style={{
+                                background: 'rgba(239,68,68,0.08)',
+                                color: '#f87171',
+                                border: '1px solid rgba(239,68,68,0.15)',
+                              }}
+                            >
+                              Cancelar
+                            </button>
+                          </>
+                        )}
+                        {isConfirming && (
+                          <button
+                            onClick={() => { setCancellingId(null); setCancelError('') }}
+                            className="w-7 h-7 flex items-center justify-center rounded-full text-sm"
+                            style={{ color: '#6b8ab0', background: '#0a1220' }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Confirmación inline de cancelación */}
+                    {isConfirming && (
+                      <div className="confirm-expand px-4 pb-4 space-y-3">
+                        <div
+                          className="rounded-xl p-3 text-sm"
+                          style={{
+                            background: isLateCancel ? 'rgba(239,68,68,0.08)' : 'rgba(251,191,36,0.07)',
+                            border: `1px solid ${isLateCancel ? 'rgba(239,68,68,0.25)' : 'rgba(251,191,36,0.2)'}`,
+                          }}
+                        >
+                          {isLateCancel ? (
+                            <>
+                              <p className="font-bold" style={{ color: '#f87171' }}>Cancelación con menos de 24h</p>
+                              <p className="mt-1 text-xs leading-relaxed" style={{ color: '#f87171', opacity: 0.8 }}>
+                                Al cancelar con tan poca antelación, esta práctica contará como realizada en tu historial.
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="font-bold" style={{ color: '#fbbf24' }}>¿Seguro que quieres cancelar?</p>
+                              <p className="mt-1 text-xs leading-relaxed" style={{ color: '#fbbf24', opacity: 0.8 }}>
+                                Puedes hacer una nueva reserva en cualquier momento.
+                              </p>
+                            </>
+                          )}
+                        </div>
+
+                        {cancelError && (
+                          <p className="text-xs text-center" style={{ color: '#f87171' }}>{cancelError}</p>
+                        )}
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => { setCancellingId(null); setCancelError('') }}
+                            className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+                            style={{ background: '#0a1220', color: '#6b8ab0', border: '1px solid #1a2d45' }}
+                          >
+                            Volver
+                          </button>
+                          <button
+                            onClick={() => cancelBooking(booking)}
+                            disabled={cancelling}
+                            className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all duration-150"
+                            style={{
+                              background: cancelling ? '#1a2d45' : 'rgba(239,68,68,0.15)',
+                              color: cancelling ? '#3a5070' : '#f87171',
+                              border: '1px solid rgba(239,68,68,0.3)',
+                            }}
+                          >
+                            {cancelling ? 'Cancelando...' : 'Sí, cancelar'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399' }}>
-                    Confirmada
-                  </span>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
 
         {/* Nueva reserva */}
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: '#0057B8' }}>
+          <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: '#0057B8' }}>
             Nueva reserva
           </p>
 
-          {/* SUCCESS */}
+          {/* ── Stepper de progreso ── */}
+          {step !== 'success' && (
+            <div className="flex items-start mb-5">
+              {STEP_LABELS.map((label, i) => {
+                const isActive = i === currentStepIndex
+                const isDone = i < currentStepIndex
+                return (
+                  <div key={label} className="flex items-center" style={{ flex: i < STEP_LABELS.length - 1 ? '1' : 'none' }}>
+                    <div className="flex flex-col items-center gap-1.5">
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black"
+                        style={{
+                          background: isDone ? '#22c55e' : isActive ? '#0057B8' : '#0a1220',
+                          border: `2px solid ${isDone ? '#22c55e' : isActive ? '#0057B8' : '#1a2d45'}`,
+                          color: isDone || isActive ? 'white' : '#3a5070',
+                          transition: 'background 0.3s, border-color 0.3s',
+                        }}
+                      >
+                        {isDone
+                          ? <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                          : i + 1
+                        }
+                      </div>
+                      <span
+                        className="text-xs font-semibold whitespace-nowrap"
+                        style={{
+                          color: isActive ? '#5a9fe0' : isDone ? '#22c55e' : '#3a5070',
+                          transition: 'color 0.3s',
+                        }}
+                      >
+                        {label}
+                      </span>
+                    </div>
+                    {i < STEP_LABELS.length - 1 && (
+                      <div
+                        className="flex-1 h-0.5 mx-2 mb-6 rounded-full"
+                        style={{
+                          background: i < currentStepIndex ? '#22c55e50' : '#1a2d45',
+                          transition: 'background 0.3s',
+                        }}
+                      />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* ── SUCCESS ── */}
           {step === 'success' && (
-            <div className="rounded-2xl p-8 text-center" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
-              <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(52,211,153,0.1)' }}>
+            <div className="rounded-2xl p-8 text-center step-enter" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+              <div
+                className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
+                style={{ background: 'rgba(52,211,153,0.1)' }}
+              >
                 <svg className="w-8 h-8" style={{ color: '#34d399' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
@@ -270,16 +520,16 @@ export default function StudentPage() {
             </div>
           )}
 
-          {/* STEP: type */}
+          {/* ── STEP: type ── */}
           {step === 'type' && (
-            <div className="rounded-2xl p-5 space-y-4" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+            <div className="rounded-2xl p-5 space-y-4 step-enter" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
               <p className="text-white font-bold">¿Qué tipo de práctica?</p>
               <div className="grid grid-cols-2 gap-3">
                 {student.practice_types.map(type => (
                   <button
                     key={type}
                     onClick={() => setSelectedType(type)}
-                    className="py-4 rounded-xl text-sm font-bold transition-all duration-150"
+                    className="py-4 rounded-xl text-sm font-bold transition-all duration-200"
                     style={{
                       background: selectedType === type
                         ? type === 'car' ? '#0057B820' : '#38bdf820'
@@ -308,9 +558,9 @@ export default function StudentPage() {
             </div>
           )}
 
-          {/* STEP: date */}
+          {/* ── STEP: date ── */}
           {step === 'date' && (
-            <div className="rounded-2xl p-5 space-y-4" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+            <div className="rounded-2xl p-5 space-y-4 step-enter" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
               <div className="flex items-center gap-3">
                 <button onClick={() => setStep('type')} style={{ color: '#6b8ab0' }}>
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -343,10 +593,13 @@ export default function StudentPage() {
                         <p className="font-bold" style={{ color: isSelected ? '#5a9fe0' : 'white' }}>{getDayName(dateStr)}</p>
                         <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>{formatDate(dateStr)}</p>
                       </div>
-                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{
-                        background: available === 0 ? '#0f1c2e' : '#0057B820',
-                        color: available === 0 ? '#3a5070' : '#0057B8',
-                      }}>
+                      <span
+                        className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                        style={{
+                          background: available === 0 ? '#0f1c2e' : '#0057B820',
+                          color: available === 0 ? '#3a5070' : '#0057B8',
+                        }}
+                      >
                         {available === 0 ? 'Completo' : `${available} huecos`}
                       </span>
                     </button>
@@ -356,9 +609,9 @@ export default function StudentPage() {
             </div>
           )}
 
-          {/* STEP: time */}
+          {/* ── STEP: time ── */}
           {step === 'time' && selectedDate && (
-            <div className="rounded-2xl p-5 space-y-4" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+            <div className="rounded-2xl p-5 space-y-4 step-enter" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
               <div className="flex items-center gap-3">
                 <button onClick={() => setStep('date')} style={{ color: '#6b8ab0' }}>
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -425,9 +678,9 @@ export default function StudentPage() {
             </div>
           )}
 
-          {/* STEP: confirm */}
+          {/* ── STEP: confirm ── */}
           {step === 'confirm' && (
-            <div className="rounded-2xl p-5 space-y-4" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+            <div className="rounded-2xl p-5 space-y-4 step-enter" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
               <div className="flex items-center gap-3">
                 <button onClick={() => setStep('time')} style={{ color: '#6b8ab0' }}>
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -440,11 +693,13 @@ export default function StudentPage() {
               <div className="rounded-xl p-4 space-y-3" style={{ background: '#0a1220', border: '1px solid #1a2d45' }}>
                 {[
                   { label: 'Día', value: `${getDayName(selectedDate)}, ${formatDate(selectedDate)}` },
-                  { label: 'Hora', value: (() => {
-                    const [h, m] = selectedSlot.split(':').map(Number)
-                    const end = h * 60 + m + SLOT_DURATION
-                    return `${selectedSlot} – ${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`
-                  })() },
+                  {
+                    label: 'Hora', value: (() => {
+                      const [h, m] = selectedSlot.split(':').map(Number)
+                      const end = h * 60 + m + SLOT_DURATION
+                      return `${selectedSlot} – ${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`
+                    })()
+                  },
                   { label: 'Tipo', value: getPracticeLabel(selectedType) },
                   { label: 'Duración', value: '45 minutos' },
                 ].map(({ label, value }) => (
@@ -456,7 +711,10 @@ export default function StudentPage() {
               </div>
 
               {submitError && (
-                <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}>
+                <div
+                  className="rounded-xl px-4 py-3 text-sm"
+                  style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}
+                >
                   {submitError}
                 </div>
               )}
