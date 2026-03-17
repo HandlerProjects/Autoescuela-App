@@ -157,7 +157,7 @@ export async function GET(req: NextRequest) {
   let sent = 0
 
   for (const booking of bookings) {
-    const student = booking.student as { full_name: string; email: string | null; token: string } | null
+    const student = (booking.student as unknown) as { full_name: string; email: string | null; token: string } | null
     if (!student?.email) continue
 
     const time = booking.start_time.substring(0, 5)
