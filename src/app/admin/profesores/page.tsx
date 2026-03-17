@@ -162,7 +162,7 @@ export default function ProfesoresPage() {
               </div>
 
               <div className="rounded-xl px-3 py-2.5 text-xs" style={{ background: '#0a1220', border: '1px solid #1a2d45', color: '#6b8ab0' }}>
-                El profesor accederá con su email y esta contraseña. Pásakela por WhatsApp o en persona.
+                El profesor accederá con su email y esta contraseña. Pásasela por WhatsApp o en persona.
               </div>
 
               {inviteError && (
