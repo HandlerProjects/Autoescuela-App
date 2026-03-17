@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-
 function getTomorrowDate(): string {
   const d = new Date()
   d.setDate(d.getDate() + 1)
@@ -153,6 +151,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ sent: 0, message: 'No hay reservas mañana' })
   }
 
+  const resend = new Resend(process.env.RESEND_API_KEY)
   const fromEmail = process.env.RESEND_FROM_EMAIL ?? 'recordatorios@autoescuela-bahillo.es'
   let sent = 0
 
