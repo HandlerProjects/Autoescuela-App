@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, formatTime, getDayName, toDateString, getPracticeLabel, generateTimeSlots } from '@/lib/utils'
-import type { Student, Booking, PracticeType, PracticeSubtype } from '@/types'
+import type { Student, Booking, PracticeType, PracticeSubtype, Exam } from '@/types'
 
 const SLOT_DURATION = 45
 const MIN_ADVANCE_HOURS = 24
@@ -49,6 +49,7 @@ export default function StudentPage() {
   const [takenSlots, setTakenSlots] = useState<{ date: string; start: string; type: PracticeType; subtype: PracticeSubtype | null }[]>([])
 
   const [allBookings, setAllBookings] = useState<Booking[]>([])
+  const [exams, setExams] = useState<Exam[]>([])
 
   const [step, setStep] = useState<Step>('type')
   const [selectedType, setSelectedType] = useState<PracticeType>('car')
@@ -80,7 +81,7 @@ export default function StudentPage() {
 
     setStudent(data)
     setSelectedType(data.practice_types[0])
-    await Promise.all([fetchMyBookings(data.id), fetchTakenSlots(data.instructor_id), fetchAllBookings(data.id)])
+    await Promise.all([fetchMyBookings(data.id), fetchTakenSlots(data.instructor_id), fetchAllBookings(data.id), fetchExams(data.id)])
     setLoading(false)
   }
 
@@ -103,6 +104,15 @@ export default function StudentPage() {
       .eq('student_id', studentId)
       .order('practice_date', { ascending: false })
     if (data) setAllBookings(data)
+  }
+
+  async function fetchExams(studentId: string) {
+    const { data } = await supabase
+      .from('exams')
+      .select('*')
+      .eq('student_id', studentId)
+      .order('exam_date', { ascending: true })
+    if (data) setExams(data)
   }
 
   async function fetchTakenSlots(instructorId: string) {
@@ -524,6 +534,45 @@ export default function StudentPage() {
             </div>
           )
         })()}
+
+        {/* Exámenes */}
+        {exams.length > 0 && (
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: '#0057B8' }}>Mis exámenes</p>
+            <div className="rounded-xl overflow-hidden" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+              {exams.map((exam, idx) => {
+                const isTheory = exam.exam_type === 'theory'
+                const passed = exam.result === 'passed'
+                const failed = exam.result === 'failed'
+                const resultColor = passed ? '#34d399' : failed ? '#f87171' : '#fbbf24'
+                const resultBg = passed ? 'rgba(52,211,153,0.1)' : failed ? 'rgba(239,68,68,0.1)' : 'rgba(251,191,36,0.1)'
+                const resultLabel = passed ? 'Aprobado' : failed ? 'Suspendido' : 'Pendiente'
+                return (
+                  <div
+                    key={exam.id}
+                    className="px-4 py-3 flex items-center gap-3"
+                    style={{ borderBottom: idx < exams.length - 1 ? '1px solid #0f1c2e' : 'none' }}
+                  >
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-base"
+                      style={{ background: isTheory ? '#0057B820' : '#38bdf820' }}>
+                      {isTheory ? '📝' : '🚗'}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-white text-sm font-bold">{isTheory ? 'Examen teórico' : 'Examen práctico'}</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>
+                        {formatDate(exam.exam_date)}{exam.attempt_number > 1 ? ` · Intento ${exam.attempt_number}` : ''}
+                        {exam.notes ? ` · ${exam.notes}` : ''}
+                      </p>
+                    </div>
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: resultBg, color: resultColor }}>
+                      {resultLabel}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Nueva reserva */}
         <div>

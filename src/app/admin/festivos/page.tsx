@@ -154,7 +154,7 @@ export default function FestivosPage() {
               return (
                 <button
                   key={day}
-                  onClick={() => !isWeekend && !isPast && toggleDay(dateStr)}
+                  onClick={() => !isWeekend && !isPast && !blocked && toggleDay(dateStr)}
                   className="rounded-lg text-sm font-bold py-2 transition-all duration-150"
                   style={{
                     background: blocked ? 'rgba(239,68,68,0.15)' : selectedDate === dateStr ? '#0057B820' : 'transparent',
