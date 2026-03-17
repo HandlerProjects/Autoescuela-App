@@ -14,9 +14,12 @@ export async function POST(req: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://autoescuela-app.vercel.app'
+
   // Invitar al usuario vía Supabase Auth (envía email de invitación automáticamente)
   const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
     data: { full_name: name },
+    redirectTo: `${appUrl}/auth/callback`,
   })
 
   if (authError) {
