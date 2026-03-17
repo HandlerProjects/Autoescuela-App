@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export async function POST(req: NextRequest) {
-  const { name, email } = await req.json()
+  const { name, email, password } = await req.json()
 
-  if (!name || !email) {
-    return NextResponse.json({ error: 'Nombre y email son obligatorios' }, { status: 400 })
+  if (!name || !email || !password) {
+    return NextResponse.json({ error: 'Nombre, email y contraseña son obligatorios' }, { status: 400 })
+  }
+
+  if (password.length < 6) {
+    return NextResponse.json({ error: 'La contraseña debe tener al menos 6 caracteres' }, { status: 400 })
   }
 
   const supabaseAdmin = createClient(
@@ -14,12 +18,11 @@ export async function POST(req: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://autoescuela-app.vercel.app'
-
-  // Invitar al usuario vía Supabase Auth (envía email de invitación automáticamente)
-  const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-    data: { full_name: name },
-    redirectTo: `${appUrl}/auth/callback`,
+  const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: name },
   })
 
   if (authError) {
@@ -29,7 +32,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 400 })
   }
 
-  // Crear la fila en la tabla instructors
   const { error: dbError } = await supabaseAdmin.from('instructors').insert({
     id: authData.user.id,
     email,
@@ -38,7 +40,6 @@ export async function POST(req: NextRequest) {
 
   if (dbError) {
     console.error('Error creando instructor en DB:', dbError)
-    // No devolvemos error al usuario porque el invite ya se envió
   }
 
   return NextResponse.json({ ok: true })

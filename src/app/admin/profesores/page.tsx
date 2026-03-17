@@ -14,6 +14,7 @@ export default function ProfesoresPage() {
   const [showInvite, setShowInvite] = useState(false)
   const [inviteName, setInviteName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
+  const [invitePassword, setInvitePassword] = useState('')
   const [inviting, setInviting] = useState(false)
   const [inviteError, setInviteError] = useState('')
   const [inviteSuccess, setInviteSuccess] = useState(false)
@@ -31,8 +32,8 @@ export default function ProfesoresPage() {
   }
 
   async function handleInvite() {
-    if (!inviteName.trim() || !inviteEmail.trim()) {
-      setInviteError('El nombre y el email son obligatorios')
+    if (!inviteName.trim() || !inviteEmail.trim() || !invitePassword) {
+      setInviteError('El nombre, email y contraseña son obligatorios')
       return
     }
     setInviting(true)
@@ -41,7 +42,7 @@ export default function ProfesoresPage() {
     const res = await fetch('/api/profesores/invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: inviteName.trim(), email: inviteEmail.trim() }),
+      body: JSON.stringify({ name: inviteName.trim(), email: inviteEmail.trim(), password: invitePassword }),
     })
 
     const data = await res.json()
@@ -55,6 +56,7 @@ export default function ProfesoresPage() {
     setInviteSuccess(true)
     setInviteName('')
     setInviteEmail('')
+    setInvitePassword('')
     setInviting(false)
     await fetchInstructors()
     setTimeout(() => {
@@ -73,7 +75,7 @@ export default function ProfesoresPage() {
           <h1 className="text-3xl font-black text-white tracking-tight">Profesores</h1>
         </div>
         <button
-          onClick={() => { setShowInvite(true); setInviteError(''); setInviteSuccess(false) }}
+          onClick={() => { setShowInvite(true); setInviteError(''); setInviteSuccess(false); setInvitePassword('') }}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition"
           style={{ background: '#0057B8' }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
@@ -103,9 +105,9 @@ export default function ProfesoresPage() {
 
           {inviteSuccess ? (
             <div className="rounded-xl px-4 py-4 text-center" style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)' }}>
-              <p className="font-bold text-sm" style={{ color: '#34d399' }}>¡Invitación enviada!</p>
+              <p className="font-bold text-sm" style={{ color: '#34d399' }}>¡Profesor creado!</p>
               <p className="text-xs mt-1" style={{ color: '#34d399', opacity: 0.7 }}>
-                El profesor recibirá un email para establecer su contraseña.
+                Ya puede acceder con su email y la contraseña que le has asignado.
               </p>
             </div>
           ) : (
@@ -143,8 +145,24 @@ export default function ProfesoresPage() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#a0b8d0' }}>
+                  Contraseña <span style={{ color: '#0057B8' }}>*</span>
+                </label>
+                <input
+                  type="password"
+                  value={invitePassword}
+                  onChange={e => setInvitePassword(e.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                  className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none transition-all"
+                  style={{ background: '#0a1220', border: '1.5px solid #1a2d45' }}
+                  onFocus={e => e.target.style.borderColor = '#0057B8'}
+                  onBlur={e => e.target.style.borderColor = '#1a2d45'}
+                />
+              </div>
+
               <div className="rounded-xl px-3 py-2.5 text-xs" style={{ background: '#0a1220', border: '1px solid #1a2d45', color: '#6b8ab0' }}>
-                Se enviará un email de invitación con un enlace para que el profesor establezca su contraseña y acceda a su propio panel.
+                El profesor accederá con su email y esta contraseña. Pásakela por WhatsApp o en persona.
               </div>
 
               {inviteError && (
@@ -163,7 +181,7 @@ export default function ProfesoresPage() {
                 </button>
                 <button
                   onClick={handleInvite}
-                  disabled={inviting}
+                  disabled={inviting || !invitePassword}
                   className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition"
                   style={{ background: inviting ? '#1a2d45' : '#0057B8', color: inviting ? '#3a5070' : 'white' }}
                   onMouseEnter={e => { if (!inviting) (e.currentTarget as HTMLElement).style.background = '#004494' }}
