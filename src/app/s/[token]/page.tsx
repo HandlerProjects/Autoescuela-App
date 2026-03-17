@@ -638,9 +638,9 @@ export default function StudentPage() {
                   <p className="text-xs font-semibold mb-2" style={{ color: '#6b8ab0' }}>Modalidad</p>
                   <div className="grid grid-cols-2 gap-3">
                     {([
-                      { value: 'pista' as PracticeSubtype, label: 'Pista', desc: '10 min pausa' },
-                      { value: 'circulacion' as PracticeSubtype, label: 'Circulación', desc: '30 min pausa' },
-                    ]).map(({ value, label, desc }) => (
+                      { value: 'pista' as PracticeSubtype, label: 'Pista' },
+                      { value: 'circulacion' as PracticeSubtype, label: 'Circulación' },
+                    ]).map(({ value, label }) => (
                       <button
                         key={value}
                         onClick={() => setSelectedSubtype(value)}
@@ -651,8 +651,7 @@ export default function StudentPage() {
                           color: selectedSubtype === value ? '#38bdf8' : '#3a5070',
                         }}
                       >
-                        <span className="block">{label}</span>
-                        <span className="text-xs font-normal opacity-70">{desc}</span>
+                        {label}
                       </button>
                     ))}
                   </div>
