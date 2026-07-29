@@ -1,15 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { formatDate } from '@/lib/utils'
 import type { Exam, Student, ExamType, ExamResult } from '@/types'
 
 export default function ExamenesPage() {
-  const supabase = createClient()
   const [exams, setExams] = useState<Exam[]>([])
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
+  const [forbidden, setForbidden] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [filter, setFilter] = useState<'all' | 'theory' | 'practical'>('all')
 
@@ -26,12 +25,23 @@ export default function ExamenesPage() {
 
   async function fetchData() {
     setLoading(true)
-    const [{ data: examsData }, { data: studentsData }] = await Promise.all([
-      supabase.from('exams').select('*, student:students(full_name, order_number)').order('exam_date', { ascending: false }),
-      supabase.from('students').select('*').eq('is_active', true).order('order_number'),
+    const [examsRes, studentsRes] = await Promise.all([
+      fetch('/api/examenes/list'),
+      fetch('/api/alumnos/list?active=true'),
     ])
-    if (examsData) setExams(examsData)
-    if (studentsData) setStudents(studentsData)
+    if (examsRes.status === 403) {
+      setForbidden(true)
+      setLoading(false)
+      return
+    }
+    if (examsRes.ok) {
+      const data = await examsRes.json()
+      setExams(data.exams ?? [])
+    }
+    if (studentsRes.ok) {
+      const data = await studentsRes.json()
+      setStudents(data.students ?? [])
+    }
     setLoading(false)
   }
 
@@ -39,37 +49,54 @@ export default function ExamenesPage() {
     if (!studentId || !examDate) return
     setSaving(true)
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    await supabase.from('exams').insert({
-      student_id: studentId,
-      instructor_id: user.id,
-      exam_type: examType,
-      exam_date: examDate,
-      result,
-      attempt_number: parseInt(attemptNumber),
-      notes: notes.trim() || null,
+    const res = await fetch('/api/examenes/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_id: studentId,
+        exam_type: examType,
+        exam_date: examDate,
+        result,
+        attempt_number: parseInt(attemptNumber),
+        notes: notes.trim() || null,
+      }),
     })
 
-    setShowForm(false)
-    setStudentId('')
-    setExamDate('')
-    setNotes('')
-    setAttemptNumber('1')
-    fetchData()
+    if (res.ok) {
+      setShowForm(false)
+      setStudentId('')
+      setExamDate('')
+      setNotes('')
+      setAttemptNumber('1')
+      fetchData()
+    } else {
+      const data = await res.json()
+      alert(data.error ?? 'Error al guardar el examen')
+    }
     setSaving(false)
   }
 
   async function updateResult(id: string, newResult: ExamResult) {
-    await supabase.from('exams').update({ result: newResult }).eq('id', id)
-    setExams(prev => prev.map(e => e.id === id ? { ...e, result: newResult } : e))
+    const res = await fetch('/api/examenes/update-result', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, result: newResult }),
+    })
+    if (res.ok) {
+      setExams(prev => prev.map(e => e.id === id ? { ...e, result: newResult } : e))
+    }
   }
 
   async function deleteExam(id: string) {
     if (!confirm('¿Eliminar este examen?')) return
-    await supabase.from('exams').delete().eq('id', id)
-    setExams(prev => prev.filter(e => e.id !== id))
+    const res = await fetch('/api/examenes/delete', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    if (res.ok) {
+      setExams(prev => prev.filter(e => e.id !== id))
+    }
   }
 
   const filtered = filter === 'all' ? exams : exams.filter(e => e.exam_type === filter)
@@ -90,6 +117,16 @@ export default function ExamenesPage() {
     if (result === 'passed') return 'Aprobado'
     if (result === 'failed') return 'Suspendido'
     return 'Pendiente'
+  }
+
+  if (forbidden) {
+    return (
+      <div className="px-4 py-6 md:p-8">
+        <div className="rounded-2xl p-16 text-center" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+          <p className="font-semibold text-white">No tienes acceso a esta sección</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -286,8 +323,8 @@ export default function ExamenesPage() {
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
                 >
                   <td className="px-5 py-4">
-                    <p className="text-white font-bold text-sm">{(exam.student as any)?.full_name ?? '—'}</p>
-                    <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>#{(exam.student as any)?.order_number}</p>
+                    <p className="text-white font-bold text-sm">{exam.student?.full_name ?? '—'}</p>
+                    <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>#{exam.student?.order_number}</p>
                   </td>
                   <td className="px-5 py-4">
                     <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={{

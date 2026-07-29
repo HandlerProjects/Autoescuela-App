@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { formatDate } from '@/lib/utils'
 import type { Payment, Student, PaymentStatus } from '@/types'
 
@@ -17,10 +16,10 @@ const RATES = [
 ]
 
 export default function PagosPage() {
-  const supabase = createClient()
   const [payments, setPayments] = useState<Payment[]>([])
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
+  const [forbidden, setForbidden] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [showRates, setShowRates] = useState(false)
   const [filter, setFilter] = useState<'all' | 'pending' | 'paid'>('all')
@@ -40,16 +39,20 @@ export default function PagosPage() {
 
   async function fetchData() {
     setLoading(true)
-    const [{ data: paymentsData }, { data: studentsData }, { data: ratesData }] = await Promise.all([
-      supabase.from('payments').select('*, student:students(full_name, order_number)').order('created_at', { ascending: false }),
-      supabase.from('students').select('*').eq('is_active', true).order('order_number'),
-      supabase.from('rates').select('*'),
-    ])
-    if (paymentsData) setPayments(paymentsData)
-    if (studentsData) setStudents(studentsData)
-    if (ratesData) {
+    const res = await fetch('/api/pagos/list')
+    if (res.status === 403) {
+      setForbidden(true)
+      setLoading(false)
+      return
+    }
+    if (res.ok) {
+      const data = await res.json()
+      setPayments(data.payments ?? [])
+      setStudents(data.students ?? [])
       const ratesMap: { [key: string]: string } = {}
-      ratesData.forEach(r => { ratesMap[r.concept] = r.price?.toString() ?? '' })
+      ;(data.rates ?? []).forEach((r: { concept: string; price: number | null }) => {
+        ratesMap[r.concept] = r.price?.toString() ?? ''
+      })
       setRates(ratesMap)
       setTempRates(ratesMap)
     }
@@ -57,20 +60,15 @@ export default function PagosPage() {
   }
 
   async function saveRates() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    for (const [concept, price] of Object.entries(tempRates)) {
-      const numPrice = price ? parseFloat(price) : null
-      await supabase.from('rates').upsert({
-        instructor_id: user.id,
-        concept,
-        price: numPrice,
-      }, { onConflict: 'instructor_id,concept' })
+    const res = await fetch('/api/pagos/rates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rates: tempRates }),
+    })
+    if (res.ok) {
+      setRates(tempRates)
+      setEditingRates(false)
     }
-
-    setRates(tempRates)
-    setEditingRates(false)
   }
 
   function selectConcept(c: string) {
@@ -82,44 +80,70 @@ export default function PagosPage() {
     if (!studentId || !amount || !concept) return
     setSaving(true)
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    await supabase.from('payments').insert({
-      student_id: studentId,
-      instructor_id: user.id,
-      amount: parseFloat(amount),
-      concept,
-      status: 'pending',
-      due_date: dueDate || null,
-      notes: notes.trim() || null,
+    const res = await fetch('/api/pagos/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_id: studentId,
+        amount,
+        concept,
+        due_date: dueDate || null,
+        notes: notes.trim() || null,
+      }),
     })
 
-    setShowForm(false)
-    setStudentId('')
-    setAmount('')
-    setConcept('')
-    setDueDate('')
-    setNotes('')
-    fetchData()
+    if (res.ok) {
+      setShowForm(false)
+      setStudentId('')
+      setAmount('')
+      setConcept('')
+      setDueDate('')
+      setNotes('')
+      fetchData()
+    } else {
+      const data = await res.json()
+      alert(data.error ?? 'Error al registrar el cobro')
+    }
     setSaving(false)
   }
 
   async function markAsPaid(id: string) {
-    await supabase.from('payments').update({ status: 'paid', paid_at: new Date().toISOString() }).eq('id', id)
-    setPayments(prev => prev.map(p => p.id === id ? { ...p, status: 'paid' as PaymentStatus, paid_at: new Date().toISOString() } : p))
+    const res = await fetch('/api/pagos/mark-paid', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    if (res.ok) {
+      setPayments(prev => prev.map(p => p.id === id ? { ...p, status: 'paid' as PaymentStatus, paid_at: new Date().toISOString() } : p))
+    }
   }
 
   async function deletePayment(id: string) {
     if (!confirm('¿Eliminar este pago?')) return
-    await supabase.from('payments').delete().eq('id', id)
-    setPayments(prev => prev.filter(p => p.id !== id))
+    const res = await fetch('/api/pagos/delete', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    if (res.ok) {
+      setPayments(prev => prev.filter(p => p.id !== id))
+    }
   }
 
   const filtered = filter === 'all' ? payments : payments.filter(p => p.status === filter)
   const totalPending = payments.filter(p => p.status === 'pending').reduce((sum, p) => sum + p.amount, 0)
   const totalPaid = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0)
   const studentsWithDebt = [...new Set(payments.filter(p => p.status === 'pending').map(p => p.student_id))].length
+
+  if (forbidden) {
+    return (
+      <div className="p-8">
+        <div className="rounded-2xl p-16 text-center" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+          <p className="font-semibold text-white">No tienes acceso a esta sección</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-8">
@@ -228,16 +252,16 @@ export default function PagosPage() {
       <div className="grid grid-cols-3 gap-4 mb-8">
         <div className="rounded-2xl p-5" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
           <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#3a5070' }}>Pendiente de cobro</p>
-          <p className="text-4xl font-black" style={{ color: '#f87171' }}>{totalPending.toFixed(0)}€</p>
+          <p className="text-4xl font-black" style={{ color: '#f87171' }}>{totalPending.toFixed(2)}€</p>
           <p className="text-xs mt-1" style={{ color: '#3a5070' }}>{studentsWithDebt} alumnos con deuda</p>
         </div>
         <div className="rounded-2xl p-5" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
           <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#3a5070' }}>Cobrado</p>
-          <p className="text-4xl font-black" style={{ color: '#34d399' }}>{totalPaid.toFixed(0)}€</p>
+          <p className="text-4xl font-black" style={{ color: '#34d399' }}>{totalPaid.toFixed(2)}€</p>
         </div>
         <div className="rounded-2xl p-5" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
           <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#3a5070' }}>Total registrado</p>
-          <p className="text-4xl font-black text-white">{(totalPending + totalPaid).toFixed(0)}€</p>
+          <p className="text-4xl font-black text-white">{(totalPending + totalPaid).toFixed(2)}€</p>
         </div>
       </div>
 
@@ -391,15 +415,15 @@ export default function PagosPage() {
                     onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
                   >
                     <td className="px-5 py-4">
-                      <p className="text-white font-bold text-sm">{(payment.student as any)?.full_name ?? '—'}</p>
-                      <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>#{(payment.student as any)?.order_number}</p>
+                      <p className="text-white font-bold text-sm">{payment.student?.full_name ?? '—'}</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>#{payment.student?.order_number}</p>
                     </td>
                     <td className="px-5 py-4">
                       <p className="text-white text-sm">{payment.concept}</p>
                       {payment.notes && <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>{payment.notes}</p>}
                     </td>
                     <td className="px-5 py-4">
-                      <p className="text-white font-black text-lg">{payment.amount.toFixed(0)}€</p>
+                      <p className="text-white font-black text-lg">{payment.amount.toFixed(2)}€</p>
                       <p className="text-xs" style={{ color: '#3a5070' }}>+ IVA</p>
                     </td>
                     <td className="px-5 py-4">

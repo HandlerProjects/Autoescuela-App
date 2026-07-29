@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { toDateString, getDuration, getBreak, getPracticeLabel } from '@/lib/utils'
 import type { Instructor, PracticeType, PracticeSubtype } from '@/types'
 
@@ -52,7 +51,6 @@ function calcBreakTimeMixed(bookings: BookingRow[]): number {
 type ViewMode = 'week' | 'month'
 
 export default function CuadrantePage() {
-  const supabase = createClient()
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
@@ -63,17 +61,12 @@ export default function CuadrantePage() {
   const [instructors, setInstructors] = useState<Instructor[]>([])
   const [bookings, setBookings] = useState<BookingRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [forbidden, setForbidden] = useState(false)
   const [expandedCell, setExpandedCell] = useState<string | null>(null)
 
-  useEffect(() => { fetchInstructors() }, [])
-  useEffect(() => { if (instructors.length > 0) fetchBookings() }, [instructors, weekStart, currentMonth, currentYear, viewMode])
+  useEffect(() => { fetchData() }, [weekStart, currentMonth, currentYear, viewMode])
 
-  async function fetchInstructors() {
-    const { data } = await supabase.from('instructors').select('*').order('created_at', { ascending: true })
-    if (data) setInstructors(data)
-  }
-
-  async function fetchBookings() {
+  async function fetchData() {
     setLoading(true)
     let from: string, to: string
     if (viewMode === 'week') {
@@ -87,14 +80,17 @@ export default function CuadrantePage() {
       to = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
     }
 
-    const { data } = await supabase
-      .from('bookings')
-      .select('instructor_id, practice_date, practice_type, practice_subtype, status')
-      .gte('practice_date', from)
-      .lte('practice_date', to)
-      .neq('status', 'cancelled')
-
-    if (data) setBookings(data as BookingRow[])
+    const res = await fetch(`/api/cuadrante/data?from=${from}&to=${to}`)
+    if (res.status === 403) {
+      setForbidden(true)
+      setLoading(false)
+      return
+    }
+    if (res.ok) {
+      const data = await res.json()
+      setInstructors(data.instructors ?? [])
+      setBookings((data.bookings ?? []) as BookingRow[])
+    }
     setLoading(false)
   }
 
@@ -175,6 +171,16 @@ export default function CuadrantePage() {
     : `${MONTHS[currentMonth]} ${currentYear}`
 
   const todayStr = toDateString(today)
+
+  if (forbidden) {
+    return (
+      <div className="p-8">
+        <div className="rounded-2xl p-16 text-center" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+          <p className="font-semibold text-white">No tienes acceso a esta sección</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-8">

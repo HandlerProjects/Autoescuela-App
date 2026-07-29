@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { formatTime, toDateString, getDayName, formatDate, getPracticeLabel, generateTimeSlots } from '@/lib/utils'
+import { toDateString, getDayName, formatDate, getPracticeLabel, generateTimeSlots } from '@/lib/utils'
 import type { Booking, BlockedSlot, PracticeType, PracticeSubtype } from '@/types'
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -18,7 +17,6 @@ function getFirstDayOfMonth(year: number, month: number) {
 }
 
 export default function CalendarioPage() {
-  const supabase = createClient()
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
@@ -29,6 +27,7 @@ export default function CalendarioPage() {
   const [blockedDays, setBlockedDays] = useState<string[]>([])
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([])
   const [loading, setLoading] = useState(true)
+  const [forbidden, setForbidden] = useState(false)
   const [filter, setFilter] = useState<'all' | 'car' | 'truck' | 'moto'>('all')
 
   useEffect(() => { fetchData() }, [currentMonth, currentYear])
@@ -39,28 +38,18 @@ export default function CalendarioPage() {
     const lastDay = getDaysInMonth(currentYear, currentMonth)
     const to = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
-    const [{ data: bookingsData }, { data: blockedData }, { data: slotsData }] = await Promise.all([
-      supabase
-        .from('bookings')
-        .select('*, student:students(full_name, order_number)')
-        .gte('practice_date', from)
-        .lte('practice_date', to)
-        .order('start_time', { ascending: true }),
-      supabase
-        .from('blocked_days')
-        .select('date')
-        .gte('date', from)
-        .lte('date', to),
-      supabase
-        .from('blocked_slots')
-        .select('*')
-        .gte('date', from)
-        .lte('date', to),
-    ])
-
-    if (bookingsData) setBookings(bookingsData)
-    if (blockedData) setBlockedDays(blockedData.map(b => b.date))
-    if (slotsData) setBlockedSlots(slotsData)
+    const res = await fetch(`/api/calendario/data?from=${from}&to=${to}`)
+    if (res.status === 403) {
+      setForbidden(true)
+      setLoading(false)
+      return
+    }
+    if (res.ok) {
+      const data = await res.json()
+      setBookings(data.bookings ?? [])
+      setBlockedDays((data.blockedDays ?? []).map((b: { date: string }) => b.date))
+      setBlockedSlots(data.blockedSlots ?? [])
+    }
     setLoading(false)
   }
 
@@ -104,6 +93,16 @@ export default function CalendarioPage() {
 
   const daysInMonth = getDaysInMonth(currentYear, currentMonth)
   const firstDay = getFirstDayOfMonth(currentYear, currentMonth)
+
+  if (forbidden) {
+    return (
+      <div className="px-4 py-6 md:p-8">
+        <div className="rounded-2xl p-16 text-center" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+          <p className="font-semibold text-white">No tienes acceso a esta sección</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="px-4 py-6 md:p-8">
@@ -338,7 +337,7 @@ export default function CalendarioPage() {
                       </div>
                       {dayBookings.map(booking => {
                         const type = booking.practice_type as PracticeType
-                        const subtype = (booking as any).practice_subtype as PracticeSubtype | null
+                        const subtype = booking.practice_subtype
                         const iscar = type === 'car'
                         return (
                           <div
@@ -352,9 +351,9 @@ export default function CalendarioPage() {
                             <div className="w-px h-6 flex-shrink-0" style={{ background: '#1a2d45' }} />
                             <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ background: iscar ? '#0057B8' : type === 'moto' ? '#a78bfa' : '#38bdf8' }} />
                             <div className="flex-1">
-                              <p className="text-white text-sm font-bold">{(booking.student as any)?.full_name ?? '—'}</p>
+                              <p className="text-white text-sm font-bold">{booking.student?.full_name ?? '—'}</p>
                               <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>
-                                {getPracticeLabel(type, subtype)} · #{(booking.student as any)?.order_number}
+                                {getPracticeLabel(type, subtype)} · #{booking.student?.order_number}
                               </p>
                             </div>
                             <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{
@@ -420,13 +419,13 @@ export default function CalendarioPage() {
                       </div>
                       {cancelled.map(booking => {
                         const type = booking.practice_type as PracticeType
-                        const subtype = (booking as any).practice_subtype as PracticeSubtype | null
+                        const subtype = booking.practice_subtype
                         return (
                           <div key={booking.id} className="px-5 py-3 flex items-center gap-3 opacity-60" style={{ borderBottom: '1px solid #0f1c2e' }}>
                             <p className="text-xs font-black font-mono w-12 flex-shrink-0 line-through" style={{ color: '#6b8ab0' }}>{booking.start_time.substring(0, 5)}</p>
                             <div className="w-px h-6 flex-shrink-0" style={{ background: '#1a2d45' }} />
                             <div className="flex-1">
-                              <p className="text-white text-sm font-bold line-through">{(booking.student as any)?.full_name ?? '—'}</p>
+                              <p className="text-white text-sm font-bold line-through">{booking.student?.full_name ?? '—'}</p>
                               <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>{getPracticeLabel(type, subtype)}</p>
                             </div>
                             <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>

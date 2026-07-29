@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { formatDate, getPracticeLabel } from '@/lib/utils'
 import type { Student } from '@/types'
 import Link from 'next/link'
@@ -11,7 +10,6 @@ interface StudentWithInstructor extends Student {
 }
 
 export default function AlumnosPage() {
-  const supabase = createClient()
   const [students, setStudents] = useState<StudentWithInstructor[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -23,13 +21,11 @@ export default function AlumnosPage() {
 
   async function fetchStudents() {
     setLoading(true)
-    const query = supabase
-      .from('students')
-      .select('*, instructor:instructors(name)')
-      .eq('is_active', !showInactive)
-      .order('order_number', { ascending: true })
-    const { data } = await query
-    if (data) setStudents(data as StudentWithInstructor[])
+    const res = await fetch(`/api/alumnos/list?active=${!showInactive}`)
+    if (res.ok) {
+      const data = await res.json()
+      setStudents(data.students ?? [])
+    }
     setLoading(false)
   }
 
@@ -42,12 +38,20 @@ export default function AlumnosPage() {
 
   async function deactivateStudent(id: string) {
     if (!confirm('¿Desactivar este alumno? Podrás reactivarlo desde su perfil.')) return
-    await supabase.from('students').update({ is_active: false }).eq('id', id)
+    await fetch('/api/alumnos/toggle-active', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, is_active: false }),
+    })
     fetchStudents()
   }
 
   async function activateStudent(id: string) {
-    await supabase.from('students').update({ is_active: true }).eq('id', id)
+    await fetch('/api/alumnos/toggle-active', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, is_active: true }),
+    })
     fetchStudents()
   }
 

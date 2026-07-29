@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { formatDate, toDateString } from '@/lib/utils'
 import type { Student, Booking } from '@/types'
 import Link from 'next/link'
@@ -14,7 +13,6 @@ interface StudentAlert {
 }
 
 export default function AlertasPage() {
-  const supabase = createClient()
   const [alerts, setAlerts] = useState<StudentAlert[]>([])
   const [noShows, setNoShows] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
@@ -26,11 +24,12 @@ export default function AlertasPage() {
     setLoading(true)
     const today = toDateString(new Date())
 
-    const [{ data: students }, { data: bookings }, { data: noShowData }] = await Promise.all([
-      supabase.from('students').select('*').eq('is_active', true),
-      supabase.from('bookings').select('*').neq('status', 'cancelled').order('practice_date', { ascending: false }),
-      supabase.from('bookings').select('*, student:students(full_name, order_number)').eq('no_show', true).gte('practice_date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]),
-    ])
+    const res = await fetch('/api/alertas/list')
+    if (!res.ok) {
+      setLoading(false)
+      return
+    }
+    const { students, bookings, noShows: noShowData }: { students: Student[]; bookings: Booking[]; noShows: Booking[] } = await res.json()
 
     if (students && bookings) {
       const studentAlerts: StudentAlert[] = []
@@ -66,7 +65,11 @@ export default function AlertasPage() {
   }
 
   async function markNoShow(bookingId: string) {
-    await supabase.from('bookings').update({ no_show: true, status: 'cancelled' }).eq('id', bookingId)
+    await fetch('/api/alertas/mark-no-show', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bookingId }),
+    })
     fetchData()
   }
 
@@ -184,9 +187,9 @@ export default function AlertasPage() {
                     style={{ borderBottom: idx < noShows.length - 1 ? '1px solid #0f1c2e' : 'none' }}
                   >
                     <div className="flex-1">
-                      <p className="text-white font-bold text-sm">{(booking.student as any)?.full_name ?? '—'}</p>
+                      <p className="text-white font-bold text-sm">{booking.student?.full_name ?? '—'}</p>
                       <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>
-                        {formatDate(booking.practice_date)} · #{(booking.student as any)?.order_number}
+                        {formatDate(booking.practice_date)} · #{booking.student?.order_number}
                       </p>
                     </div>
                     <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>
