@@ -97,8 +97,9 @@ export async function POST(req: NextRequest) {
 
     if (instructorError) {
       console.error('Error creando instructor en DB:', instructorError)
+      await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
       return NextResponse.json(
-        { error: 'Usuario creado pero error al guardar en BD: ' + instructorError.message },
+        { error: 'No se pudo guardar el instructor: ' + instructorError.message },
         { status: 500 }
       )
     }
@@ -114,8 +115,10 @@ export async function POST(req: NextRequest) {
 
   if (staffError) {
     console.error('Error añadiendo a staff:', staffError)
+    if (role === 'instructor') await supabaseAdmin.from('instructors').delete().eq('id', authData.user.id)
+    await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
     return NextResponse.json(
-      { error: 'Usuario creado pero error al guardar en BD: ' + staffError.message },
+      { error: 'No se pudo guardar en el equipo: ' + staffError.message },
       { status: 500 }
     )
   }
