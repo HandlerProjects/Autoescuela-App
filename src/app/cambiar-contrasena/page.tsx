@@ -53,15 +53,11 @@ export default function CambiarContrasenaPage() {
     }
 
     // Redirigir al panel según el rol
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: staff } = await supabase
-      .from('staff')
-      .select('role')
-      .eq('id', user!.id)
-      .single()
+    const meRes = await fetch('/api/auth/me')
+    const me = meRes.ok ? await meRes.json() : null
 
-    if (staff?.role === 'secretary') router.replace('/secretaria')
-    else if (staff?.role === 'instructor') router.replace('/instructor')
+    if (me?.role === 'secretary') router.replace('/secretaria')
+    else if (me?.role === 'instructor') router.replace('/instructor')
     else router.replace('/admin')
   }
 

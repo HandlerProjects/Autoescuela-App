@@ -16,6 +16,30 @@ export async function POST(req: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
+  if (!is_active) {
+    const { data: target } = await supabaseAdmin
+      .from('staff')
+      .select('role')
+      .eq('id', id)
+      .single()
+
+    if (target?.role === 'admin') {
+      const { count } = await supabaseAdmin
+        .from('staff')
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'admin')
+        .eq('is_active', true)
+        .neq('id', id)
+
+      if (!count) {
+        return NextResponse.json(
+          { error: 'No puede quedar la autoescuela sin ningún admin activo' },
+          { status: 400 }
+        )
+      }
+    }
+  }
+
   await supabaseAdmin.from('staff').update({ is_active }).eq('id', id)
 
   // Si se desactiva, bloquear también el acceso en auth

@@ -28,13 +28,15 @@ export default function LandingPage() {
       return router.push('/cambiar-contrasena')
     }
 
-    const { data: staff } = await supabase
-      .from('staff')
-      .select('role')
-      .eq('id', authData.user.id)
-      .single()
-    if (staff?.role === 'secretary') return router.push('/secretaria')
-    if (staff?.role === 'instructor') return router.push('/instructor')
+    const meRes = await fetch('/api/auth/me')
+    const me = meRes.ok ? await meRes.json() : null
+    if (!me) {
+      setError('Tu usuario no tiene acceso configurado. Contacta con la autoescuela.')
+      setLoading(false)
+      return
+    }
+    if (me.role === 'secretary') return router.push('/secretaria')
+    if (me.role === 'instructor') return router.push('/instructor')
     router.push('/admin')
   }
 

@@ -5,6 +5,16 @@ import { Resend } from 'resend'
 import { getSessionUser, isAdmin } from '@/lib/auth'
 import { APP_URL, FROM_EMAIL, emailWrapper, infoCard, infoRow, ctaButton } from '@/lib/email'
 
+type StaffRole = 'admin' | 'instructor' | 'secretary'
+
+const VALID_ROLES: StaffRole[] = ['admin', 'instructor', 'secretary']
+
+const ROLE_LABELS: Record<StaffRole, string> = {
+  admin: 'administrador',
+  instructor: 'instructor',
+  secretary: 'secretaria',
+}
+
 function generatePassword(): string {
   const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789'
   return [4, 4, 4]
@@ -12,24 +22,25 @@ function generatePassword(): string {
     .join('-')
 }
 
-function buildWelcomeEmail(name: string, email: string, password: string): string {
+function buildWelcomeEmail(name: string, email: string, password: string, role: StaffRole): string {
   const firstName = name.split(' ')[0]
+  const roleLabel = ROLE_LABELS[role]
 
   const rows =
     infoRow('Tu email de acceso', email, '#dce8f5') +
-    infoRow('Tu contrasena temporal', password, '#dce8f5', true)
+    infoRow('Tu contraseña temporal', password, '#dce8f5', true)
 
   const content = `
     <p style="margin:0 0 6px;color:#0057B8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Bienvenido/a al equipo</p>
     <h1 style="margin:0 0 16px;color:#0a0f1a;font-size:23px;font-weight:900">Hola, ${firstName}</h1>
     <p style="margin:0 0 24px;color:#4a6080;font-size:15px;line-height:1.7">
-      Tu cuenta de <strong>secretaria</strong> en <strong>Auto-Escuela Bahillo</strong> ha sido creada.
-      Aqui tienes tus credenciales de acceso:
+      Tu cuenta de <strong>${roleLabel}</strong> en <strong>Auto-Escuela Bahillo</strong> ha sido creada.
+      Aquí tienes tus credenciales de acceso:
     </p>
     ${infoCard(rows, '#f0f6ff', '#dce8f5')}
     ${ctaButton(APP_URL, 'Acceder al panel →')}
     <p style="margin:20px 0 0;color:#9ab0c8;font-size:12px;text-align:center;line-height:1.6">
-      Por seguridad, se te pedira que establezcas una nueva contrasena la primera vez que entres.
+      Por seguridad, se te pedirá que establezcas una nueva contraseña la primera vez que entres.
     </p>
   `
 
@@ -41,14 +52,18 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   if (!isAdmin(user)) return NextResponse.json({ error: 'Prohibido' }, { status: 403 })
 
-  const { name, email } = await req.json()
+  const { name, email, role } = await req.json()
 
   if (!name || !email) {
     return NextResponse.json({ error: 'Nombre y email son obligatorios' }, { status: 400 })
   }
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return NextResponse.json({ error: 'El formato del email no es valido' }, { status: 400 })
+    return NextResponse.json({ error: 'El formato del email no es válido' }, { status: 400 })
+  }
+
+  if (!VALID_ROLES.includes(role)) {
+    return NextResponse.json({ error: 'El rol no es válido' }, { status: 400 })
   }
 
   const supabaseAdmin = createClient(
@@ -73,17 +88,36 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 400 })
   }
 
-  const { error: dbError } = await supabaseAdmin.from('staff').insert({
+  if (role === 'instructor') {
+    const { error: instructorError } = await supabaseAdmin.from('instructors').insert({
+      id: authData.user.id,
+      email,
+      name,
+    })
+
+    if (instructorError) {
+      console.error('Error creando instructor en DB:', instructorError)
+      return NextResponse.json(
+        { error: 'Usuario creado pero error al guardar en BD: ' + instructorError.message },
+        { status: 500 }
+      )
+    }
+  }
+
+  const { error: staffError } = await supabaseAdmin.from('staff').insert({
     id: authData.user.id,
     email,
     name,
-    role: 'secretary',
+    role,
     is_active: true,
   })
 
-  if (dbError) {
-    console.error('Error creando secretaria en DB:', dbError)
-    return NextResponse.json({ error: 'Usuario creado pero error al guardar en DB' }, { status: 500 })
+  if (staffError) {
+    console.error('Error añadiendo a staff:', staffError)
+    return NextResponse.json(
+      { error: 'Usuario creado pero error al guardar en BD: ' + staffError.message },
+      { status: 500 }
+    )
   }
 
   try {
@@ -92,7 +126,7 @@ export async function POST(req: NextRequest) {
       from: FROM_EMAIL,
       to: email,
       subject: 'Tus credenciales de acceso · Auto-Escuela Bahillo',
-      html: buildWelcomeEmail(name, email, password),
+      html: buildWelcomeEmail(name, email, password, role),
     })
   } catch (err) {
     console.error('Error enviando email de bienvenida:', err)
