@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const from = searchParams.get('from')
   const to = searchParams.get('to')
+  const instructorId = searchParams.get('instructorId')
   if (!from || !to) return NextResponse.json({ error: 'from y to son obligatorios' }, { status: 400 })
 
   const supabaseAdmin = createClient(
@@ -40,10 +41,17 @@ export async function GET(req: NextRequest) {
     .lte('date', to)
 
   // Un instructor solo ve su propio calendario, nunca el de otros instructores
+  // (comprobación de seguridad: se ignora cualquier instructorId que llegue por query string)
   if (user.role === 'instructor') {
     bookingsQuery = bookingsQuery.eq('instructor_id', user.id)
     blockedDaysQuery = blockedDaysQuery.eq('instructor_id', user.id)
     blockedSlotsQuery = blockedSlotsQuery.eq('instructor_id', user.id)
+  } else if (user.role === 'admin' && instructorId) {
+    // El admin ve el calendario de un instructor concreto cuando lo selecciona;
+    // sin instructorId se mantiene el comportamiento previo (todos mezclados).
+    bookingsQuery = bookingsQuery.eq('instructor_id', instructorId)
+    blockedDaysQuery = blockedDaysQuery.eq('instructor_id', instructorId)
+    blockedSlotsQuery = blockedSlotsQuery.eq('instructor_id', instructorId)
   }
 
   const [{ data: bookingsData, error: bookingsError }, { data: blockedData, error: blockedError }, { data: slotsData, error: slotsError }] =

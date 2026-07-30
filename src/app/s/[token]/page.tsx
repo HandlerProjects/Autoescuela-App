@@ -6,7 +6,11 @@ import { createStudentClient } from '@/lib/supabase/client'
 import { formatDate, formatTime, getDayName, toDateString, getPracticeLabel, generateTimeSlots, getDuration, getBreak } from '@/lib/utils'
 import type { Student, Booking, PracticeType, PracticeSubtype, Exam, Instructor } from '@/types'
 
-const MIN_ADVANCE_HOURS = 24
+// Antelación para RESERVAR una práctica (feedback del dueño: bajado de 1 día a 30 min).
+const MIN_ADVANCE_HOURS_BOOKING = 0.5
+// Antelación para CANCELAR sin que cuente como no-presentado — se mantiene aparte a propósito:
+// bajar la de reservar no debe relajar también la política de no-shows.
+const MIN_ADVANCE_HOURS_CANCEL = 24
 const MAX_BOOKING_DAYS = 7
 
 const PICKUP_LOCATIONS = [
@@ -35,7 +39,7 @@ function hoursUntil(dateStr: string, timeStr: string): number {
 }
 
 function isSlotTooSoon(dateStr: string, timeStr: string): boolean {
-  return hoursUntil(dateStr, timeStr) < MIN_ADVANCE_HOURS
+  return hoursUntil(dateStr, timeStr) < MIN_ADVANCE_HOURS_BOOKING
 }
 
 function getWeekBounds(dateStr: string): { from: string; to: string } {
@@ -218,7 +222,7 @@ export default function StudentPage() {
     setCancelling(true)
     setCancelError('')
 
-    const isLate = hoursUntil(booking.practice_date, booking.start_time.substring(0, 5)) < MIN_ADVANCE_HOURS
+    const isLate = hoursUntil(booking.practice_date, booking.start_time.substring(0, 5)) < MIN_ADVANCE_HOURS_CANCEL
     const updateData: Record<string, unknown> = { status: 'cancelled' }
     if (isLate) updateData.no_show = true
 
@@ -434,11 +438,16 @@ export default function StudentPage() {
       {/* Header */}
       <div style={{ background: '#0d1829', borderBottom: '1px solid #1a2d45' }}>
         <div className="max-w-lg mx-auto px-4 py-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#0057B8' }}>
+          <button
+            onClick={() => { resetBooking(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+            title="Volver a mis reservas"
+            className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform active:scale-90"
+            style={{ background: '#0057B8' }}
+          >
             <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 13l1.5-4.5A2 2 0 016.4 7h11.2a2 2 0 011.9 1.5L21 13M3 13v5a1 1 0 001 1h1a2 2 0 004 0h8a2 2 0 004 0h1a1 1 0 001-1v-5M3 13h18" />
             </svg>
-          </div>
+          </button>
           <div>
             <p className="text-white text-sm font-black leading-none">{student.full_name}</p>
             <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>Auto-Escuela Bahillo · Alumno #{student.order_number}</p>
@@ -457,7 +466,7 @@ export default function StudentPage() {
             <div className="space-y-2">
               {myBookings.map(booking => {
                 const isConfirming = cancellingId === booking.id
-                const isLateCancel = hoursUntil(booking.practice_date, booking.start_time.substring(0, 5)) < MIN_ADVANCE_HOURS
+                const isLateCancel = hoursUntil(booking.practice_date, booking.start_time.substring(0, 5)) < MIN_ADVANCE_HOURS_CANCEL
 
                 return (
                   <div

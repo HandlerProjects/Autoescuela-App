@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { toDateString, getDayName, formatDate, getPracticeLabel, generateTimeSlots } from '@/lib/utils'
-import type { Booking, BlockedSlot, PracticeType, PracticeSubtype } from '@/types'
+import type { Booking, BlockedSlot, PracticeType, PracticeSubtype, Instructor } from '@/types'
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -31,15 +31,56 @@ export default function CalendarioPage() {
   const [forbidden, setForbidden] = useState(false)
   const [filter, setFilter] = useState<'all' | 'car' | 'truck' | 'moto'>('all')
 
-  useEffect(() => { fetchData() }, [currentMonth, currentYear])
+  // Selector de instructor (solo admin): cada instructor tiene un calendario totalmente
+  // independiente, así que el admin siempre elige uno concreto — no existe vista "todos mezclados".
+  const [currentUserRole, setCurrentUserRole] = useState<'admin' | 'instructor' | 'secretary' | null>(null)
+  const [instructors, setInstructors] = useState<Instructor[]>([])
+  const [selectedInstructorId, setSelectedInstructorId] = useState('')
+  const [instructorMenuOpen, setInstructorMenuOpen] = useState(false)
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { fetchMe(); fetchInstructors() }, [])
+
+  // Auto-selección del primer instructor (por created_at ascendente, como ya los devuelve
+  // /api/profesores/list) en cuanto sabemos que el rol es admin y ya cargó la lista.
+  useEffect(() => {
+    if (currentUserRole === 'admin' && instructors.length > 0 && !selectedInstructorId) {
+      setSelectedInstructorId(instructors[0].id)
+    }
+  }, [currentUserRole, instructors, selectedInstructorId])
+
+  useEffect(() => {
+    // Esperamos a saber el rol para no pedir el modo "todos mezclados" ni un instante;
+    // si es admin, esperamos también a tener un instructor seleccionado.
+    if (currentUserRole === null) return
+    if (currentUserRole === 'admin' && !selectedInstructorId) return
+    fetchData()
+  }, [currentMonth, currentYear, currentUserRole, selectedInstructorId])
+
+  async function fetchMe() {
+    const res = await fetch('/api/auth/me')
+    if (res.ok) {
+      const data = await res.json()
+      setCurrentUserRole(data.role ?? null)
+    }
+  }
+
+  async function fetchInstructors() {
+    const res = await fetch('/api/profesores/list')
+    if (res.ok) {
+      const data = await res.json()
+      setInstructors(data.instructors ?? [])
+    }
+  }
 
   async function fetchData() {
     setLoading(true)
     const from = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`
     const lastDay = getDaysInMonth(currentYear, currentMonth)
     const to = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    const instructorParam = currentUserRole === 'admin' && selectedInstructorId ? `&instructorId=${selectedInstructorId}` : ''
 
-    const res = await fetch(`/api/calendario/data?from=${from}&to=${to}`)
+    const res = await fetch(`/api/calendario/data?from=${from}&to=${to}${instructorParam}`)
     if (res.status === 403) {
       setForbidden(true)
       setLoading(false)
@@ -116,20 +157,58 @@ export default function CalendarioPage() {
           <p className="text-sm font-medium mb-1" style={{ color: '#0057B8' }}>Agenda</p>
           <h1 className="text-3xl font-black text-white tracking-tight">Calendario</h1>
         </div>
-        <div className="flex gap-1 rounded-xl p-1 self-start" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
-          {(['all', 'car', 'truck', 'moto'] as const).map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition"
-              style={{
-                background: filter === f ? (f === 'moto' ? '#a78bfa' : '#0057B8') : 'transparent',
-                color: filter === f ? 'white' : '#6b8ab0',
-              }}
-            >
-              {f === 'all' ? 'Todos' : getPracticeLabel(f)}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 self-start">
+          {currentUserRole === 'admin' && (
+            <div className="relative">
+              <button
+                onClick={() => setInstructorMenuOpen(o => !o)}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition"
+                style={{ background: '#0d1829', border: '1px solid #1a2d45', color: 'white' }}
+              >
+                {instructors.find(i => i.id === selectedInstructorId)?.name ?? 'Selecciona instructor'}
+                <svg className="w-3 h-3 flex-shrink-0 transition-transform" style={{ color: '#6b8ab0', transform: instructorMenuOpen ? 'rotate(180deg)' : 'none' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {instructorMenuOpen && (
+                <div
+                  className="absolute left-0 mt-1 rounded-xl overflow-hidden z-10 min-w-[180px]"
+                  style={{ background: '#0a1220', border: '1px solid #1a2d45' }}
+                >
+                  {instructors.map(inst => (
+                    <button
+                      key={inst.id}
+                      onClick={() => { setSelectedInstructorId(inst.id); setInstructorMenuOpen(false) }}
+                      className="w-full text-left px-3 py-2 text-xs font-semibold transition"
+                      style={{
+                        color: inst.id === selectedInstructorId ? '#4d9ff5' : '#a0b8d0',
+                        background: inst.id === selectedInstructorId ? 'rgba(0,87,184,0.15)' : 'transparent',
+                      }}
+                    >
+                      {inst.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-1 rounded-xl p-1" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+            {(['all', 'car', 'truck', 'moto'] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+                style={{
+                  background: filter === f ? (f === 'moto' ? '#a78bfa' : '#0057B8') : 'transparent',
+                  color: filter === f ? 'white' : '#6b8ab0',
+                }}
+              >
+                {f === 'all' ? 'Todos' : getPracticeLabel(f)}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
