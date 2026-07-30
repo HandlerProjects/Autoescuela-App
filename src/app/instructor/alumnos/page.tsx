@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { getPracticeLabel } from '@/lib/utils'
 import type { Student, PracticeType } from '@/types'
@@ -8,24 +9,24 @@ import type { Student, PracticeType } from '@/types'
 export default function InstructorAlumnosPage() {
   const supabase = createClient()
   const [students, setStudents] = useState<Student[]>([])
+  const [instructorId, setInstructorId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState<string | null>(null)
 
   useEffect(() => { init() }, [])
 
   async function init() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data: instructor } = await supabase
-      .from('instructors')
-      .select('id')
-      .eq('id', user.id)
-      .single()
-    if (instructor) {
+    // Identidad y rol resueltos vía getSessionUser() (canónico, src/lib/auth.ts) en vez de
+    // consultar la tabla instructors directamente desde el cliente.
+    const meRes = await fetch('/api/auth/me')
+    if (!meRes.ok) { setLoading(false); return }
+    const me = await meRes.json()
+    if (me.role === 'instructor') {
+      setInstructorId(me.id)
       const { data } = await supabase
         .from('students')
         .select('*')
-        .eq('instructor_id', instructor.id)
+        .eq('instructor_id', me.id)
         .eq('is_active', true)
         .order('order_number', { ascending: true })
       if (data) setStudents(data)
@@ -36,7 +37,7 @@ export default function InstructorAlumnosPage() {
   async function toggleExamMode(student: Student) {
     setToggling(student.id)
     const newVal = !student.exam_mode
-    await supabase.from('students').update({ exam_mode: newVal }).eq('id', student.id)
+    await supabase.from('students').update({ exam_mode: newVal }).eq('id', student.id).eq('instructor_id', instructorId)
     setStudents(prev => prev.map(s => s.id === student.id ? { ...s, exam_mode: newVal } : s))
     setToggling(null)
   }
@@ -65,9 +66,10 @@ export default function InstructorAlumnosPage() {
       ) : (
         <div className="space-y-3">
           {students.map(student => (
-            <div
+            <Link
               key={student.id}
-              className="rounded-2xl px-5 py-4"
+              href={`/instructor/alumnos/${student.id}`}
+              className="rounded-2xl px-5 py-4 block"
               style={{
                 background: '#0d1829',
                 border: `1px solid ${student.exam_mode ? '#f59e0b40' : '#1a2d45'}`,
@@ -98,7 +100,10 @@ export default function InstructorAlumnosPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div
+                  className="flex items-center gap-3"
+                  onClick={e => { e.preventDefault(); e.stopPropagation() }}
+                >
                   {/* Modo examen toggle */}
                   <button
                     onClick={() => toggleExamMode(student)}
@@ -125,7 +130,7 @@ export default function InstructorAlumnosPage() {
                   Puede reservar mañana + tarde el mismo día hasta que desactives este modo
                 </p>
               )}
-            </div>
+            </Link>
           ))}
         </div>
       )}
