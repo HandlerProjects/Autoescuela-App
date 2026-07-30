@@ -104,9 +104,7 @@ export default function StudentPage() {
       fetchAllBookings(data.id),
       fetchExams(data.id),
       ...(data.instructor_id ? [
-        fetchTakenSlots(data.instructor_id),
-        fetchBlockedSlots(data.instructor_id),
-        fetchBlockedDays(data.instructor_id),
+        fetchAvailability(data.id, data.instructor_id),
         fetchInstructor(data.instructor_id),
       ] : []),
     ])
@@ -148,54 +146,23 @@ export default function StudentPage() {
     if (data) setExams(data)
   }
 
-  async function fetchTakenSlots(instructorId: string) {
+  // Disponibilidad real (reservas/bloqueos de TODOS los alumnos de este instructor) no puede
+  // leerse con el cliente anon+token: la RLS de `bookings` solo deja ver las reservas del
+  // propio alumno, así que huecos ocupados por otros alumnos del mismo instructor se veían
+  // como libres. Se resuelve server-side con service role, igual que /api/booking/create.
+  async function fetchAvailability(studentId: string, instructorId: string) {
     const from = toDateString(workingDays[0])
     const to = toDateString(workingDays[workingDays.length - 1])
-    const { data } = await supabase
-      .from('bookings')
-      .select('practice_date, start_time, practice_type, practice_subtype')
-      .eq('instructor_id', instructorId)
-      .gte('practice_date', from)
-      .lte('practice_date', to)
-      .neq('status', 'cancelled')
-    if (data) {
-      setTakenSlots(data.map(b => ({
-        date: b.practice_date,
-        start: b.start_time.substring(0, 5),
-        type: b.practice_type,
-        subtype: b.practice_subtype ?? null,
-      })))
-    }
-  }
-
-  async function fetchBlockedSlots(instructorId: string) {
-    const from = toDateString(workingDays[0])
-    const to = toDateString(workingDays[workingDays.length - 1])
-    const { data } = await supabase
-      .from('blocked_slots')
-      .select('date, start_time, end_time')
-      .eq('instructor_id', instructorId)
-      .gte('date', from)
-      .lte('date', to)
-    if (data) {
-      setBlockedSlots(data.map(b => ({
-        date: b.date,
-        start: b.start_time.substring(0, 5),
-        end: b.end_time.substring(0, 5),
-      })))
-    }
-  }
-
-  async function fetchBlockedDays(instructorId: string) {
-    const from = toDateString(workingDays[0])
-    const to = toDateString(workingDays[workingDays.length - 1])
-    const { data } = await supabase
-      .from('blocked_days')
-      .select('date, reason')
-      .eq('instructor_id', instructorId)
-      .gte('date', from)
-      .lte('date', to)
-    if (data) setBlockedDays(data.map(b => ({ date: b.date, reason: b.reason })))
+    const res = await fetch('/api/booking/availability', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, studentId, instructorId, from, to }),
+    })
+    if (!res.ok) return
+    const data = await res.json()
+    setTakenSlots(data.takenSlots ?? [])
+    setBlockedSlots(data.blockedSlots ?? [])
+    setBlockedDays(data.blockedDays ?? [])
   }
 
   function toMins(t: string): number {
@@ -314,7 +281,7 @@ export default function StudentPage() {
     }).catch(() => {})
 
     setCancellingId(null)
-    await Promise.all([fetchMyBookings(student!.id), ...(student!.instructor_id ? [fetchTakenSlots(student!.instructor_id)] : [])])
+    await Promise.all([fetchMyBookings(student!.id), ...(student!.instructor_id ? [fetchAvailability(student!.id, student!.instructor_id)] : [])])
     setCancelling(false)
   }
 
@@ -397,7 +364,7 @@ export default function StudentPage() {
     await Promise.all([
       fetchMyBookings(student.id),
       fetchAllBookings(student.id),
-      ...(student.instructor_id ? [fetchTakenSlots(student.instructor_id)] : []),
+      ...(student.instructor_id ? [fetchAvailability(student.id, student.instructor_id)] : []),
     ])
     setStep('success')
     setSubmitting(false)

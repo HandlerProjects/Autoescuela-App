@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, formatTime, getDayName, getPracticeLabel, getStatusLabel, getStatusColor } from '@/lib/utils'
-import type { Student, Booking } from '@/types'
+import type { Student, Booking, Instructor } from '@/types'
 import Link from 'next/link'
 
 export default function AlumnoPerfilPage() {
@@ -35,14 +35,21 @@ export default function AlumnoPerfilPage() {
   const [startDate, setStartDate] = useState('')
   const [editStartDate, setEditStartDate] = useState(false)
   const [savingStartDate, setSavingStartDate] = useState(false)
+  const [currentUserRole, setCurrentUserRole] = useState<'admin' | 'instructor' | 'secretary' | null>(null)
+  const [instructors, setInstructors] = useState<Instructor[]>([])
+  const [editInstructor, setEditInstructor] = useState(false)
+  const [selectedInstructorId, setSelectedInstructorId] = useState('')
+  const [savingInstructor, setSavingInstructor] = useState(false)
 
   useEffect(() => { fetchData() }, [id])
 
   async function fetchData() {
     setLoading(true)
-    const [{ data: studentData }, { data: bookingsData }] = await Promise.all([
+    const [{ data: studentData }, { data: bookingsData }, meRes, instructorsRes] = await Promise.all([
       supabase.from('students').select('*, instructor:instructors(name)').eq('id', id).single(),
       supabase.from('bookings').select('*').eq('student_id', id).order('practice_date', { ascending: false }),
+      fetch('/api/auth/me'),
+      fetch('/api/profesores/list'),
     ])
     if (!studentData) { router.push('/admin/alumnos'); return }
     setInstructorName((studentData as any).instructor?.name ?? null)
@@ -54,7 +61,35 @@ export default function AlumnoPerfilPage() {
     setNotes(studentData.notes ?? '')
     setStartDate(studentData.start_date ?? '')
     if (bookingsData) setBookings(bookingsData)
+    if (meRes.ok) {
+      const me = await meRes.json()
+      setCurrentUserRole(me.role ?? null)
+    }
+    if (instructorsRes.ok) {
+      const instructorsData = await instructorsRes.json()
+      setInstructors(instructorsData.instructors ?? [])
+    }
     setLoading(false)
+  }
+
+  async function saveInstructor() {
+    setSavingInstructor(true)
+    const instructorId = selectedInstructorId || null
+    const res = await fetch('/api/alumnos/reassign-instructor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, instructorId }),
+    })
+    const data = await res.json()
+    if (!res.ok || data.error) {
+      alert(data.error ?? 'No se pudo cambiar el instructor')
+      setSavingInstructor(false)
+      return
+    }
+    setInstructorName(data.instructorName ?? null)
+    setStudent(prev => prev ? { ...prev, instructor_id: instructorId } : prev)
+    setSavingInstructor(false)
+    setEditInstructor(false)
   }
 
   async function copyLink() {
@@ -209,8 +244,52 @@ export default function AlumnoPerfilPage() {
 
           {/* Instructor asignado */}
           <div className="rounded-2xl p-5" style={{ background: '#0d1829', border: `1px solid ${instructorName ? '#0057B840' : '#1a2d45'}` }}>
-            <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: '#0057B8' }}>Instructor</p>
-            {instructorName ? (
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#0057B8' }}>Instructor</p>
+              {(currentUserRole === 'admin' || currentUserRole === 'secretary') && !editInstructor && (
+                <button
+                  onClick={() => { setEditInstructor(true); setSelectedInstructorId(student.instructor_id ?? '') }}
+                  className="text-xs font-semibold transition"
+                  style={{ color: '#3a5070' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'white'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#3a5070'}
+                >
+                  Cambiar
+                </button>
+              )}
+            </div>
+            {editInstructor ? (
+              <div className="space-y-2">
+                <select
+                  value={selectedInstructorId}
+                  onChange={e => setSelectedInstructorId(e.target.value)}
+                  className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
+                  style={{ background: '#0a1220', border: '1.5px solid #0057B8' }}
+                >
+                  <option value="">Sin asignar (vuelve al tablón)</option>
+                  {instructors.map(instructor => (
+                    <option key={instructor.id} value={instructor.id}>{instructor.name}</option>
+                  ))}
+                </select>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setEditInstructor(false)}
+                    className="flex-1 py-2 rounded-lg text-xs font-bold transition"
+                    style={{ background: '#0a1220', color: '#6b8ab0', border: '1px solid #1a2d45' }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={saveInstructor}
+                    disabled={savingInstructor}
+                    className="flex-1 py-2 rounded-lg text-xs font-bold text-white transition"
+                    style={{ background: '#0057B8' }}
+                  >
+                    {savingInstructor ? 'Guardando...' : 'Guardar'}
+                  </button>
+                </div>
+              </div>
+            ) : instructorName ? (
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0" style={{ background: '#0057B820', color: '#0057B8' }}>
                   {instructorName.charAt(0).toUpperCase()}
@@ -719,7 +798,7 @@ export default function AlumnoPerfilPage() {
                         {formatTime(booking.start_time)} – {formatTime(booking.end_time)} · {getPracticeLabel(booking.practice_type)}
                       </p>
                     </div>
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${getStatusColor(booking.status)}`}>
+                    <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={getStatusColor(booking.status)}>
                       {getStatusLabel(booking.status)}
                     </span>
                   </div>

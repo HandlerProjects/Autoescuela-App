@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getSessionUser, isAdminOrInstructor } from '@/lib/auth'
+import { getSessionUser } from '@/lib/auth'
 
 export async function GET() {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-  if (!isAdminOrInstructor(user)) return NextResponse.json({ error: 'Prohibido' }, { status: 403 })
+  // Admin, instructor y secretaría tienen un uso legítimo de esta lista
+  // (calendario, autoasignación, selector de reasignación de alumnos).
+  if (!['admin', 'instructor', 'secretary'].includes(user.role)) {
+    return NextResponse.json({ error: 'Prohibido' }, { status: 403 })
+  }
   const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,

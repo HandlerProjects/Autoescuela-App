@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     supabaseAdmin.from('instructors').select('*').order('created_at', { ascending: true }),
     supabaseAdmin
       .from('bookings')
-      .select('instructor_id, practice_date, practice_type, practice_subtype, status')
+      .select('instructor_id, practice_date, practice_type, practice_subtype, status, pickup_location, student:students(full_name, order_number)')
       .gte('practice_date', from)
       .lte('practice_date', to)
       .neq('status', 'cancelled'),

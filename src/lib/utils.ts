@@ -129,12 +129,12 @@ export function getStatusLabel(status: 'confirmed' | 'cancelled' | 'completed'):
   return labels[status]
 }
 
-// ── Color del badge según estado ──────────────────────────────────────────────
-export function getStatusColor(status: 'confirmed' | 'cancelled' | 'completed'): string {
+// ── Color del badge según estado (tema oscuro: fondo translúcido + texto sólido) ─
+export function getStatusColor(status: 'confirmed' | 'cancelled' | 'completed'): { background: string; color: string } {
   const colors = {
-    confirmed: 'bg-emerald-100 text-emerald-800',
-    cancelled: 'bg-red-100 text-red-800',
-    completed: 'bg-gray-100 text-gray-700',
+    confirmed: { background: 'rgba(34,197,94,0.18)', color: '#4ade80' },
+    cancelled: { background: 'rgba(239,68,68,0.18)', color: '#f87171' },
+    completed: { background: 'rgba(107,138,176,0.18)', color: '#a0b8d0' },
   }
   return colors[status]
 }

@@ -23,6 +23,7 @@ export default function CalendarioPage() {
   const [currentMonth, setCurrentMonth] = useState(today.getMonth())
   const [currentYear, setCurrentYear] = useState(today.getFullYear())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null)
   const [bookings, setBookings] = useState<Booking[]>([])
   const [blockedDays, setBlockedDays] = useState<string[]>([])
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([])
@@ -73,10 +74,12 @@ export default function CalendarioPage() {
     const carFree = generateTimeSlots('car').filter(t => !bookedTimes.has(t)).map(t => ({ time: t, type: 'car' as PracticeType, subtype: null as PracticeSubtype | null }))
     const pistafree = generateTimeSlots('truck', 'pista').filter(t => !bookedTimes.has(t)).map(t => ({ time: t, type: 'truck' as PracticeType, subtype: 'pista' as PracticeSubtype }))
     const circFree = generateTimeSlots('truck', 'circulacion').filter(t => !bookedTimes.has(t)).map(t => ({ time: t, type: 'truck' as PracticeType, subtype: 'circulacion' as PracticeSubtype }))
+    const motoFree = generateTimeSlots('moto').filter(t => !bookedTimes.has(t)).map(t => ({ time: t, type: 'moto' as PracticeType, subtype: null as PracticeSubtype | null }))
 
     if (filter === 'car') return carFree
     if (filter === 'truck') return [...pistafree, ...circFree].sort((a, b) => a.time.localeCompare(b.time))
-    return [...carFree, ...pistafree, ...circFree].sort((a, b) => a.time.localeCompare(b.time))
+    if (filter === 'moto') return motoFree
+    return [...carFree, ...pistafree, ...circFree, ...motoFree].sort((a, b) => a.time.localeCompare(b.time))
   }
 
   function prevMonth() {
@@ -212,7 +215,7 @@ export default function CalendarioPage() {
                       {carCount > 0 && (
                         <div className="flex items-center gap-0.5">
                           <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: isSelected ? 'rgba(255,255,255,0.7)' : '#0057B8' }} />
-                          <p className="text-xs font-bold leading-none" style={{ color: isSelected ? 'rgba(255,255,255,0.8)' : '#0057B8', fontSize: '10px' }}>{carCount}</p>
+                          <p className="text-xs font-bold leading-none" style={{ color: isSelected ? 'rgba(255,255,255,0.8)' : '#4f9eff', fontSize: '10px' }}>{carCount}</p>
                         </div>
                       )}
                       {truckCount > 0 && (
@@ -339,29 +342,67 @@ export default function CalendarioPage() {
                         const type = booking.practice_type as PracticeType
                         const subtype = booking.practice_subtype
                         const iscar = type === 'car'
+                        const isExpanded = expandedBookingId === booking.id
                         return (
-                          <div
-                            key={booking.id}
-                            className="px-5 py-3 flex items-center gap-3 transition"
-                            style={{ borderBottom: '1px solid #0f1c2e' }}
-                            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#0f1c2e'}
-                            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
-                          >
-                            <p className="text-xs font-black font-mono w-12 flex-shrink-0" style={{ color: '#6b8ab0' }}>{booking.start_time.substring(0, 5)}</p>
-                            <div className="w-px h-6 flex-shrink-0" style={{ background: '#1a2d45' }} />
-                            <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ background: iscar ? '#0057B8' : type === 'moto' ? '#a78bfa' : '#38bdf8' }} />
-                            <div className="flex-1">
-                              <p className="text-white text-sm font-bold">{booking.student?.full_name ?? '—'}</p>
-                              <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>
-                                {getPracticeLabel(type, subtype)} · #{booking.student?.order_number}
-                              </p>
+                          <div key={booking.id}>
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setExpandedBookingId(isExpanded ? null : booking.id)}
+                              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedBookingId(isExpanded ? null : booking.id) } }}
+                              className="px-5 py-3 flex items-center gap-3 transition cursor-pointer"
+                              style={{ borderBottom: isExpanded ? 'none' : '1px solid #0f1c2e', background: isExpanded ? '#0f1c2e' : 'transparent' }}
+                              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#0f1c2e'}
+                              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = isExpanded ? '#0f1c2e' : 'transparent'}
+                            >
+                              <p className="text-xs font-black font-mono w-12 flex-shrink-0" style={{ color: '#6b8ab0' }}>{booking.start_time.substring(0, 5)}</p>
+                              <div className="w-px h-6 flex-shrink-0" style={{ background: '#1a2d45' }} />
+                              <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ background: iscar ? '#0057B8' : type === 'moto' ? '#a78bfa' : '#38bdf8' }} />
+                              <div className="flex-1">
+                                <p className="text-white text-sm font-bold">{booking.student?.full_name ?? '—'}</p>
+                                <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>
+                                  {getPracticeLabel(type, subtype)} · #{booking.student?.order_number}
+                                </p>
+                              </div>
+                              <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{
+                                background: iscar ? '#0057B820' : type === 'moto' ? '#a78bfa20' : '#38bdf820',
+                                color: iscar ? '#4f9eff' : type === 'moto' ? '#a78bfa' : '#38bdf8',
+                              }}>
+                                {getPracticeLabel(type, subtype)}
+                              </span>
+                              <svg className="w-3.5 h-3.5 flex-shrink-0 transition-transform" style={{ color: '#3a5070', transform: isExpanded ? 'rotate(180deg)' : 'none' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                              </svg>
                             </div>
-                            <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{
-                              background: iscar ? '#0057B820' : type === 'moto' ? '#a78bfa20' : '#38bdf820',
-                              color: iscar ? '#0057B8' : type === 'moto' ? '#a78bfa' : '#38bdf8',
-                            }}>
-                              {getPracticeLabel(type, subtype)}
-                            </span>
+                            {isExpanded && (
+                              <div className="px-5 py-3" style={{ background: '#0a1220', borderBottom: '1px solid #0f1c2e' }}>
+                                <div className="flex items-start gap-2 mb-2">
+                                  <span className="text-xs font-bold uppercase tracking-widest flex-shrink-0" style={{ color: '#3a5070' }}>Horario</span>
+                                  <span className="text-xs font-mono" style={{ color: '#6b8ab0' }}>{booking.start_time.substring(0, 5)} – {booking.end_time.substring(0, 5)}</span>
+                                </div>
+                                <div className="flex items-start gap-2 mb-2">
+                                  <span className="text-xs font-bold uppercase tracking-widest flex-shrink-0" style={{ color: '#3a5070' }}>Recogida</span>
+                                  <span className="text-xs" style={{ color: booking.pickup_location ? '#6b8ab0' : '#3a5070' }}>
+                                    {booking.pickup_location || 'Sin lugar de recogida indicado'}
+                                  </span>
+                                </div>
+                                {booking.notes && (
+                                  <div className="flex items-start gap-2 mb-2">
+                                    <span className="text-xs font-bold uppercase tracking-widest flex-shrink-0" style={{ color: '#3a5070' }}>Notas</span>
+                                    <span className="text-xs" style={{ color: '#6b8ab0' }}>{booking.notes}</span>
+                                  </div>
+                                )}
+                                <button
+                                  onClick={() => setExpandedBookingId(null)}
+                                  className="text-xs font-semibold mt-1"
+                                  style={{ color: '#5a7699' }}
+                                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'white'}
+                                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#5a7699'}
+                                >
+                                  Cerrar
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )
                       })}
@@ -383,9 +424,9 @@ export default function CalendarioPage() {
                           </div>
                           {morning.map(({ time, type, subtype }) => (
                             <div key={`${time}-${type}-${subtype}`} className="px-5 py-2.5 flex items-center gap-3" style={{ borderBottom: '1px solid #0f1c2e' }}>
-                              <p className="text-xs font-mono w-12 flex-shrink-0" style={{ color: '#1a2d45' }}>{time}</p>
+                              <p className="text-xs font-mono w-12 flex-shrink-0" style={{ color: '#5a7699' }}>{time}</p>
                               <div className="w-px h-5 flex-shrink-0" style={{ background: '#1a2d45' }} />
-                              <p className="text-xs flex-1" style={{ color: '#1a2d45' }}>Libre · {getPracticeLabel(type, subtype)}</p>
+                              <p className="text-xs flex-1" style={{ color: '#5a7699' }}>Libre · {getPracticeLabel(type, subtype)}</p>
                             </div>
                           ))}
                         </div>
@@ -397,9 +438,9 @@ export default function CalendarioPage() {
                           </div>
                           {afternoon.map(({ time, type, subtype }) => (
                             <div key={`${time}-${type}-${subtype}`} className="px-5 py-2.5 flex items-center gap-3" style={{ borderBottom: '1px solid #0f1c2e' }}>
-                              <p className="text-xs font-mono w-12 flex-shrink-0" style={{ color: '#1a2d45' }}>{time}</p>
+                              <p className="text-xs font-mono w-12 flex-shrink-0" style={{ color: '#5a7699' }}>{time}</p>
                               <div className="w-px h-5 flex-shrink-0" style={{ background: '#1a2d45' }} />
-                              <p className="text-xs flex-1" style={{ color: '#1a2d45' }}>Libre · {getPracticeLabel(type, subtype)}</p>
+                              <p className="text-xs flex-1" style={{ color: '#5a7699' }}>Libre · {getPracticeLabel(type, subtype)}</p>
                             </div>
                           ))}
                         </div>

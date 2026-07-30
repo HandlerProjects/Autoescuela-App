@@ -161,7 +161,7 @@ export default function AdminPage() {
                   >
                     {getPracticeLabel(booking.practice_type, (booking as any).practice_subtype)}
                   </span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${getStatusColor(booking.status)}`}>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={getStatusColor(booking.status)}>
                     {getStatusLabel(booking.status)}
                   </span>
                   {(booking as any).instructor?.name && (

@@ -30,6 +30,7 @@ export async function middleware(request: NextRequest) {
 
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser()
 
   const path = request.nextUrl.pathname
@@ -38,7 +39,14 @@ export async function middleware(request: NextRequest) {
   const protectedPaths = ['/admin', '/instructor', '/secretaria']
   const isProtected = protectedPaths.some(p => path.startsWith(p))
 
-  if (isProtected && !user) {
+  // error.status 400/401 = Supabase confirma que no hay sesión válida → expulsar.
+  // Cualquier otro error (timeout, red, cold-start del servidor de Auth) es transitorio:
+  // no expulsamos a un usuario con sesión válida solo porque la comprobación falló a
+  // tiempo. Las rutas API ya vuelven a autenticar server-side (getSessionUser) antes
+  // de servir ningún dato, así que la protección real no depende de este redirect.
+  const sessionConfirmedMissing = !user && (!error || error.status === 400 || error.status === 401)
+
+  if (isProtected && sessionConfirmedMissing) {
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = '/'
     return NextResponse.redirect(loginUrl)

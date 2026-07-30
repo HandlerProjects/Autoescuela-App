@@ -14,6 +14,8 @@ type BookingRow = {
   practice_type: PracticeType
   practice_subtype: PracticeSubtype | null
   status: string
+  pickup_location: string | null
+  student: { full_name: string; order_number: number } | null
 }
 
 function getWeekStart(date: Date): Date {
@@ -458,14 +460,19 @@ function WeekView({
                 const breakMins = i < dayBookings.length - 1 ? getBreak(b.practice_type, b.practice_subtype ?? undefined) : 0
                 return (
                   <div key={i} className="px-5 py-3 flex items-center gap-4">
-                    <div className="w-1 h-8 rounded-full flex-shrink-0" style={{
+                    <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{
                       background: b.practice_type === 'car' ? '#0057B8' : b.practice_type === 'moto' ? '#a78bfa' : '#38bdf8'
                     }} />
-                    <div className="flex-1">
-                      <p className="text-sm font-bold text-white">{getPracticeLabel(b.practice_type, b.practice_subtype ?? undefined)}</p>
-                      <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>{practMins}min práctica{breakMins > 0 ? ` · ${breakMins}min descanso` : ''}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-white truncate">{b.student?.full_name ?? '—'}</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>
+                        {getPracticeLabel(b.practice_type, b.practice_subtype ?? undefined)} · {practMins}min práctica{breakMins > 0 ? ` · ${breakMins}min descanso` : ''}
+                      </p>
+                      <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>
+                        {b.pickup_location || 'Sin lugar de recogida indicado'}
+                      </p>
                     </div>
-                    <span className="text-xs px-2 py-1 rounded-lg font-semibold" style={{
+                    <span className="text-xs px-2 py-1 rounded-lg font-semibold flex-shrink-0" style={{
                       background: b.status === 'completed' ? 'rgba(52,211,153,0.1)' : '#0057B810',
                       color: b.status === 'completed' ? '#34d399' : '#0057B8',
                     }}>
