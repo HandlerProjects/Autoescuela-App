@@ -18,7 +18,12 @@ export default function LandingPage() {
   async function handleLogin() {
     setLoading(true)
     setError('')
-    const { data: authData, error } = await supabase.auth.signInWithPassword({ email, password })
+    // Recorta espacios/saltos de línea de más — fácil arrastrar alguno al copiar
+    // el email o la contraseña temporal desde el correo de bienvenida.
+    const { data: authData, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password: password.trim(),
+    })
     if (error || !authData.user) {
       setError('Email o contraseña incorrectos')
       setLoading(false)
