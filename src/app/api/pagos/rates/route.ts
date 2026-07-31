@@ -18,16 +18,17 @@ export async function POST(req: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  for (const [concept, price] of Object.entries(rates)) {
-    const numPrice = price ? parseFloat(price as string) : null
-    const { error } = await supabaseAdmin.from('rates').upsert({
-      instructor_id: user.id,
-      concept,
-      price: numPrice,
-    }, { onConflict: 'instructor_id,concept' })
+  const rows = Object.entries(rates).map(([concept, price]) => ({
+    instructor_id: user.id,
+    concept,
+    price: price ? parseFloat(price as string) : null,
+  }))
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  const { error } = await supabaseAdmin
+    .from('rates')
+    .upsert(rows, { onConflict: 'instructor_id,concept' })
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({ ok: true })
 }

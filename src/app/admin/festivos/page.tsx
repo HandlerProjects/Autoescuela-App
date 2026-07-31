@@ -45,29 +45,26 @@ export default function FestivosPage() {
   useEffect(() => { if (selectedInstructorId) fetchData() }, [currentMonth, currentYear, selectedInstructorId])
 
   async function initUser() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    // Identidad/rol vía /api/auth/me (getSessionUser canónico) en vez de consultar
+    // instructors directamente — reduce esto a 1 salto de red para instructor y 2 para
+    // admin (antes eran 2 y 3, con dos queries distintas a instructors).
+    const meRes = await fetch('/api/auth/me')
+    if (!meRes.ok) return
+    const me = await meRes.json()
 
-    // ¿El usuario autenticado tiene un registro como instructor (su auth ID == instructors.id)?
-    const { data: ownRecord } = await supabase
-      .from('instructors')
-      .select('id')
-      .eq('id', user.id)
-      .single()
-
-    if (ownRecord) {
+    if (me.role === 'instructor') {
       // Es un instructor — gestiona solo sus propios bloqueos
       setIsOwnInstructor(true)
-      setSelectedInstructorId(ownRecord.id)
+      setSelectedInstructorId(me.id)
     } else {
-      // Es admin — puede gestionar cualquier instructor
-      const { data: allInstructors } = await supabase
-        .from('instructors')
-        .select('*')
-        .order('name')
-      if (allInstructors && allInstructors.length > 0) {
-        setInstructors(allInstructors)
-        setSelectedInstructorId(allInstructors[0].id)
+      // Es admin (u otro rol no instructor) — puede gestionar cualquier instructor
+      const res = await fetch('/api/profesores/list')
+      if (res.ok) {
+        const { instructors: allInstructors } = await res.json()
+        if (allInstructors && allInstructors.length > 0) {
+          setInstructors(allInstructors)
+          setSelectedInstructorId(allInstructors[0].id)
+        }
       }
     }
   }

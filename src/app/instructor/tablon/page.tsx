@@ -48,28 +48,31 @@ export default function TablonPage() {
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
-    init()
-    return () => { if (refreshRef.current) clearInterval(refreshRef.current) }
+    // init() (identidad + datos del instructor) y loadQueue() (lista del tablón) no dependen
+    // entre sí — se lanzan en paralelo en vez de encadenados, y el spinner se quita cuando
+    // ambos han terminado, no cuando termina el más lento de los dos en serie.
+    let cancelled = false
+    Promise.all([init(), loadQueue()]).finally(() => { if (!cancelled) setLoading(false) })
+    refreshRef.current = setInterval(loadQueue, 30000)
+    return () => { cancelled = true; if (refreshRef.current) clearInterval(refreshRef.current) }
   }, [])
 
   async function init() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
+    const meRes = await fetch('/api/auth/me')
+    if (!meRes.ok) return
+    const me = await meRes.json()
+    if (me.role !== 'instructor') return
 
     const { data: instructor } = await supabase
       .from('instructors')
       .select('id, name, practice_types')
-      .eq('id', user.id)
+      .eq('id', me.id)
       .single()
 
     if (instructor) {
       setInstructorId(instructor.id)
       setInstructorName(instructor.name)
       setInstructorTypes(instructor.practice_types ?? ['car'])
-      await loadQueue()
-      refreshRef.current = setInterval(loadQueue, 30000)
-    } else {
-      setLoading(false)
     }
   }
 
@@ -77,7 +80,6 @@ export default function TablonPage() {
     const res = await fetch('/api/tablon/list')
     const json = await res.json()
     if (json.students) setStudents(json.students)
-    setLoading(false)
   }
 
   async function handleClaim(studentId: string) {

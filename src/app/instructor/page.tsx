@@ -27,17 +27,16 @@ export default function InstructorPage() {
   useEffect(() => { init() }, [])
 
   async function init() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data: instructor } = await supabase
-      .from('instructors')
-      .select('id, name')
-      .eq('id', user.id)
-      .single()
-    if (instructor) {
-      setInstructorId(instructor.id)
-      setInstructorName(instructor.name)
-      await Promise.all([fetchToday(instructor.id), fetchUpcoming(instructor.id)])
+    // Identidad + nombre vía /api/auth/me (getSessionUser canónico) en un solo salto —
+    // staff.name e instructors.name siempre coinciden (se crean juntos en /api/staff/invite),
+    // así que no hace falta una segunda consulta a instructors solo para el nombre.
+    const meRes = await fetch('/api/auth/me')
+    if (!meRes.ok) { setLoading(false); return }
+    const me = await meRes.json()
+    if (me.role === 'instructor') {
+      setInstructorId(me.id)
+      setInstructorName(me.name ?? '')
+      await Promise.all([fetchToday(me.id), fetchUpcoming(me.id)])
     } else {
       setLoading(false)
     }
