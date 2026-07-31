@@ -1,5 +1,7 @@
 // ── Helper compartido para todos los emails de Auto-Escuela Bahillo ────────────
 
+import { randomBytes } from 'crypto'
+
 export const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://autoescuela-app.vercel.app'
 export const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'notificaciones@autoescuela-bahillo.es'
 
@@ -97,6 +99,56 @@ export function ctaButton(url: string, label: string, color = '#0057B8'): string
       </a>
     </td></tr>
   </table>`
+}
+
+// ── Credenciales de personal (login por email+contraseña vía Supabase Auth) ────
+
+export type StaffRole = 'admin' | 'instructor' | 'secretary'
+
+const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
+  admin: 'administrador',
+  instructor: 'instructor',
+  secretary: 'secretaria',
+}
+
+// Evita caracteres visualmente ambiguos (0/O, 1/l/I) para que copiarla a mano no dé pie a error
+export function generatePassword(): string {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789'
+  return [4, 4, 4]
+    .map(len => Array.from(randomBytes(len)).map(b => chars[b % chars.length]).join(''))
+    .join('-')
+}
+
+// content=true → contraseña en <code> monoespaciado con nowrap, más difícil arrastrar
+// un espacio/salto de línea de más al seleccionarla y copiarla desde el correo.
+function credentialValue(value: string): string {
+  return `<code style="font-family:'SFMono-Regular',Consolas,monospace;white-space:nowrap;letter-spacing:0.5px">${value}</code>`
+}
+
+export function buildCredentialsEmail(name: string, email: string, password: string, role: StaffRole, isReset = false): string {
+  const firstName = name.split(' ')[0]
+  const roleLabel = STAFF_ROLE_LABELS[role]
+
+  const rows =
+    infoRow('Tu email de acceso', email, '#dce8f5') +
+    infoRow('Tu contraseña temporal', credentialValue(password), '#dce8f5', true)
+
+  const content = `
+    <p style="margin:0 0 6px;color:#0057B8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px">${isReset ? 'Nueva contraseña' : 'Bienvenido/a al equipo'}</p>
+    <h1 style="margin:0 0 16px;color:#0a0f1a;font-size:23px;font-weight:900">Hola, ${firstName}</h1>
+    <p style="margin:0 0 24px;color:#4a6080;font-size:15px;line-height:1.7">
+      ${isReset
+        ? `Se ha restablecido la contraseña de tu cuenta de <strong>${roleLabel}</strong> en <strong>Auto-Escuela Bahillo</strong>. Aquí tienes tus nuevas credenciales:`
+        : `Tu cuenta de <strong>${roleLabel}</strong> en <strong>Auto-Escuela Bahillo</strong> ha sido creada. Aquí tienes tus credenciales de acceso:`}
+    </p>
+    ${infoCard(rows, '#f0f6ff', '#dce8f5')}
+    ${ctaButton(APP_URL, 'Acceder al panel →')}
+    <p style="margin:20px 0 0;color:#9ab0c8;font-size:12px;text-align:center;line-height:1.6">
+      Por seguridad, se te pedirá que establezcas una nueva contraseña la primera vez que entres.
+    </p>
+  `
+
+  return emailWrapper(content)
 }
 
 // Helpers de fecha

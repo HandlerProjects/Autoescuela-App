@@ -33,7 +33,7 @@ export default function EquipoPage() {
   const [createRole, setCreateRole] = useState<StaffRole>('instructor')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
-  const [createSuccess, setCreateSuccess] = useState(false)
+  const [createSuccess, setCreateSuccess] = useState<{ emailSent: boolean; password?: string } | null>(null)
 
   // Expandir fila
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -51,6 +51,10 @@ export default function EquipoPage() {
 
   // Error inline por fila
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null)
+
+  // Restablecer contraseña
+  const [resettingId, setResettingId] = useState<string | null>(null)
+  const [resetResult, setResetResult] = useState<{ id: string; emailSent: boolean; password?: string } | null>(null)
 
   // Detalle de instructor — tipos de práctica
   const [editingTypesId, setEditingTypesId] = useState<string | null>(null)
@@ -138,12 +142,15 @@ export default function EquipoPage() {
       return
     }
 
-    setCreateSuccess(true)
+    setCreateSuccess({ emailSent: data.emailSent, password: data.password })
     setCreateName('')
     setCreateEmail('')
     setCreating(false)
     await fetchStaff()
-    setTimeout(() => { setCreateSuccess(false); setShowCreate(false); setCreateRole('instructor') }, 2500)
+    // Si el email falló, dejamos el panel abierto para que se pueda leer/copiar la contraseña.
+    if (data.emailSent) {
+      setTimeout(() => { setCreateSuccess(null); setShowCreate(false); setCreateRole('instructor') }, 2500)
+    }
   }
 
   async function changeRole(member: StaffMember, role: StaffRole) {
@@ -188,6 +195,29 @@ export default function EquipoPage() {
 
     setStaff(prev => prev.map(s => s.id === member.id ? { ...s, is_active: !s.is_active } : s))
     setToggling(null)
+  }
+
+  async function handleResetPassword(member: StaffMember) {
+    if (!confirm(`¿Restablecer la contraseña de ${member.name}? La contraseña actual dejará de funcionar.`)) return
+    setResettingId(member.id)
+    setRowError(null)
+    setResetResult(null)
+
+    const res = await fetch('/api/staff/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: member.id }),
+    })
+    const data = await res.json()
+
+    if (!res.ok || data.error) {
+      setRowError({ id: member.id, message: data.error ?? 'No se pudo restablecer la contraseña' })
+      setResettingId(null)
+      return
+    }
+
+    setResetResult({ id: member.id, emailSent: data.emailSent, password: data.password })
+    setResettingId(null)
   }
 
   async function handleDelete(id: string) {
@@ -335,7 +365,7 @@ export default function EquipoPage() {
           <p className="text-sm mt-1" style={{ color: '#6b8ab0' }}>Todos los miembros del equipo, sus roles y sus datos</p>
         </div>
         <button
-          onClick={() => { setShowCreate(true); setCreateError(''); setCreateSuccess(false) }}
+          onClick={() => { setShowCreate(true); setCreateError(''); setCreateSuccess(null) }}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition mt-1"
           style={{ background: '#0057B8' }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
@@ -363,9 +393,16 @@ export default function EquipoPage() {
           {createSuccess ? (
             <div className="rounded-xl px-4 py-4 text-center" style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)' }}>
               <p className="font-bold text-sm" style={{ color: '#34d399' }}>¡Cuenta creada!</p>
-              <p className="text-xs mt-1" style={{ color: '#34d399', opacity: 0.7 }}>
-                Las credenciales se han enviado por email.
-              </p>
+              {createSuccess.emailSent ? (
+                <p className="text-xs mt-1" style={{ color: '#34d399', opacity: 0.7 }}>
+                  Las credenciales se han enviado por email.
+                </p>
+              ) : (
+                <p className="text-xs mt-2" style={{ color: '#34d399' }}>
+                  El email no se pudo enviar. Contraseña temporal:{' '}
+                  <code className="font-mono font-bold" style={{ color: 'white' }}>{createSuccess.password}</code>
+                </p>
+              )}
             </div>
           ) : (
             <>
@@ -536,6 +573,26 @@ export default function EquipoPage() {
                     {member.is_active ? 'Activo' : 'Inactivo'}
                   </span>
 
+                  {/* Restablecer contraseña */}
+                  {!isSelf && (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleResetPassword(member) }}
+                      disabled={resettingId === member.id}
+                      title="Restablecer contraseña"
+                      className="text-xs px-3 py-1.5 rounded-xl font-semibold transition flex-shrink-0"
+                      style={{
+                        background: '#0a1220',
+                        border: '1px solid #1a2d45',
+                        color: resettingId === member.id ? '#3a5070' : '#6b8ab0',
+                        opacity: resettingId === member.id ? 0.5 : 1,
+                      }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'white'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#6b8ab0'}
+                    >
+                      {resettingId === member.id ? '...' : '🔑 Contraseña'}
+                    </button>
+                  )}
+
                   {/* Toggle activo/inactivo */}
                   {!isSelf && (
                     <button
@@ -606,6 +663,22 @@ export default function EquipoPage() {
                   <div className="px-5 pb-3">
                     <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>
                       {rowError.message}
+                    </div>
+                  </div>
+                )}
+
+                {/* Resultado de restablecer contraseña */}
+                {resetResult?.id === member.id && (
+                  <div className="px-5 pb-3">
+                    <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399' }}>
+                      {resetResult.emailSent ? (
+                        '✓ Contraseña restablecida. Se han enviado las nuevas credenciales por email.'
+                      ) : (
+                        <>
+                          ✓ Contraseña restablecida, pero el email no se pudo enviar. Comunícasela tú mismo:{' '}
+                          <code className="font-mono font-bold" style={{ color: 'white' }}>{resetResult.password}</code>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
