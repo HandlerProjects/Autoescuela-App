@@ -46,14 +46,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Este día está bloqueado. El instructor no está disponible.' }, { status: 409 })
   }
 
-  // Comprobar límite de reservas activas simultáneas
+  // Comprobar límite de reservas activas simultáneas — solo cuentan las que AÚN NO
+  // han terminado. Antes contaba todas las "confirmed" sin mirar fecha/hora, así que
+  // una práctica ya pasada que nadie marcó "Completada" bloqueaba al alumno para
+  // siempre, sin poder volver a reservar nunca más.
   if (student.max_concurrent_bookings) {
-    const { count } = await supabaseAdmin
+    const { data: confirmedBookings } = await supabaseAdmin
       .from('bookings')
-      .select('id', { count: 'exact', head: true })
+      .select('practice_date, end_time')
       .eq('student_id', studentId)
       .eq('status', 'confirmed')
-    if ((count ?? 0) >= student.max_concurrent_bookings) {
+
+    const nowMadrid = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Madrid' }).replace(' ', 'T')
+    const activeCount = (confirmedBookings ?? []).filter(b => `${b.practice_date}T${b.end_time}` > nowMadrid).length
+
+    if (activeCount >= student.max_concurrent_bookings) {
       return NextResponse.json({ error: `Tienes el máximo de ${student.max_concurrent_bookings} reservas activas permitidas.` }, { status: 409 })
     }
   }
