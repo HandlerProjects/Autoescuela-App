@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getSessionUser, isAdmin } from '@/lib/auth'
+import { getSessionUser, isAdminOrSecretary } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-  // El cuadrante compara horas entre instructores: solo tiene sentido para admin
-  if (!isAdmin(user)) return NextResponse.json({ error: 'Prohibido' }, { status: 403 })
+  // El cuadrante compara horas entre instructores: admin y secretaría lo necesitan, instructor no
+  if (!isAdminOrSecretary(user)) return NextResponse.json({ error: 'Prohibido' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
   const from = searchParams.get('from')

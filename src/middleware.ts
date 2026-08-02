@@ -36,7 +36,7 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
   if (path.startsWith('/auth/')) return supabaseResponse
 
-  const protectedPaths = ['/admin', '/instructor', '/secretaria']
+  const protectedPaths = ['/admin', '/instructor']
   const isProtected = protectedPaths.some(p => path.startsWith(p))
 
   // error.status 400/401 = Supabase confirma que no hay sesión válida → expulsar.

@@ -56,8 +56,7 @@ export default function CambiarContrasenaPage() {
     const meRes = await fetch('/api/auth/me')
     const me = meRes.ok ? await meRes.json() : null
 
-    if (me?.role === 'secretary') router.replace('/secretaria')
-    else if (me?.role === 'instructor') router.replace('/instructor')
+    if (me?.role === 'instructor') router.replace('/instructor')
     else router.replace('/admin')
   }
 

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getSessionUser, isAdminOrInstructor } from '@/lib/auth'
+import { getSessionUser } from '@/lib/auth'
 
 export async function POST(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-  if (!isAdminOrInstructor(user)) return NextResponse.json({ error: 'Prohibido' }, { status: 403 })
+  // getSessionUser() ya garantiza role admin/instructor/secretary — cualquier
+  // staff autenticado puede usar el tablón, no hace falta restringir más.
 
   const { studentId, instructorId: bodyInstructorId } = await req.json()
 
@@ -13,10 +14,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'studentId es obligatorio' }, { status: 400 })
   }
 
-  // Instructores siempre se autoasignan; admin puede asignar a cualquier instructor
-  const instructorId = user.role === 'admin'
-    ? (bodyInstructorId ?? user.id)
-    : user.id
+  // Instructores siempre se autoasignan; admin y secretaría eligen instructor explícitamente
+  let instructorId: string
+  if (user.role === 'instructor') {
+    instructorId = user.id
+  } else {
+    if (!bodyInstructorId) {
+      return NextResponse.json({ error: 'instructorId es obligatorio' }, { status: 400 })
+    }
+    instructorId = bodyInstructorId
+  }
 
   const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

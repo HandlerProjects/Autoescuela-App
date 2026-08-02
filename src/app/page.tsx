@@ -40,7 +40,6 @@ export default function LandingPage() {
       setLoading(false)
       return
     }
-    if (me.role === 'secretary') return router.push('/secretaria')
     if (me.role === 'instructor') return router.push('/instructor')
     router.push('/admin')
   }
