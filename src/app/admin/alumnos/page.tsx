@@ -94,6 +94,7 @@ export default function AlumnosPage() {
         </div>
         <Link
           href="/admin/alumnos/nuevo"
+          prefetch={false}
           className="flex items-center gap-2 font-bold text-sm px-5 py-3 rounded-xl transition-all duration-200 text-white shadow-lg"
           style={{ background: '#0057B8' }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
@@ -205,6 +206,7 @@ export default function AlumnosPage() {
                 </div>
                 <div className="flex gap-2">
                   <Link href={`/admin/alumnos/${student.id}`}
+                    prefetch={false}
                     className="flex-1 text-center text-xs py-2 rounded-lg font-semibold"
                     style={{ background: '#0f1c2e', color: '#a0b8d0' }}>
                     Ver perfil
@@ -302,6 +304,7 @@ export default function AlumnosPage() {
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2 justify-end">
                         <Link href={`/admin/alumnos/${student.id}`}
+                          prefetch={false}
                           className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all duration-150"
                           style={{ background: '#0f1c2e', color: '#a0b8d0' }}
                           onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#1a2d45'}

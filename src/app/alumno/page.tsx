@@ -64,6 +64,7 @@ export default function AlumnoLoginPage() {
 
         <Link
           href="/"
+          prefetch={false}
           className="flex items-center gap-2 mb-6 text-sm font-semibold transition"
           style={{ color: '#6b8ab0' }}
         >

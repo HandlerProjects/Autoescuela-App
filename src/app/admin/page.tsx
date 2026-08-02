@@ -70,6 +70,7 @@ export default function AdminPage() {
         </div>
         <Link
           href="/admin/alumnos/nuevo"
+          prefetch={false}
           className="flex items-center gap-2 font-bold text-sm px-5 py-3 rounded-xl transition-all duration-200 text-white shadow-lg"
           style={{ background: '#0057B8' }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}

@@ -68,6 +68,7 @@ export default function NuevoAlumnoPage() {
       <div className="flex items-center gap-4 mb-8">
         <Link
           href="/admin/alumnos"
+          prefetch={false}
           className="p-2 rounded-xl transition"
           style={{ color: '#6b8ab0' }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'white'}
@@ -196,6 +197,7 @@ export default function NuevoAlumnoPage() {
         <div className="flex gap-3 pt-1">
           <Link
             href="/admin/alumnos"
+            prefetch={false}
             className="flex-1 text-center rounded-xl py-3 text-sm font-bold transition"
             style={{ background: '#0a1220', border: '1.5px solid #1a2d45', color: '#6b8ab0' }}
           >

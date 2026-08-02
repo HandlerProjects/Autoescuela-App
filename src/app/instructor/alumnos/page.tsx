@@ -61,6 +61,7 @@ export default function InstructorAlumnosPage() {
             <Link
               key={student.id}
               href={`/instructor/alumnos/${student.id}`}
+              prefetch={false}
               className="rounded-2xl px-5 py-4 block"
               style={{
                 background: '#0d1829',

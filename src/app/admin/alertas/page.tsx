@@ -154,6 +154,7 @@ export default function AlertasPage() {
 
                     <Link
                       href={`/admin/alumnos/${student.id}`}
+                      prefetch={false}
                       className="px-4 py-2 rounded-xl text-sm font-bold transition"
                       style={{ background: '#0057B820', color: '#0057B8' }}
                       onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#0057B840'}

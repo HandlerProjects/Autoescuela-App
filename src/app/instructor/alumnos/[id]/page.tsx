@@ -110,6 +110,7 @@ export default function InstructorAlumnoPerfilPage() {
       <div className="flex items-center gap-4 mb-8">
         <Link
           href="/instructor/alumnos"
+          prefetch={false}
           className="p-2 rounded-xl transition"
           style={{ color: '#6b8ab0' }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'white'}

@@ -72,6 +72,7 @@ export default function LandingPage() {
               {/* Alumno */}
               <Link
                 href="/alumno"
+                prefetch={false}
                 className="flex items-center gap-4 w-full rounded-2xl p-5 transition-all duration-200 group"
                 style={{ background: '#0057B8' }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
