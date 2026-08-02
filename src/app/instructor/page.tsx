@@ -5,14 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import { formatTime, formatDate, getDayName, toDateString, getPracticeLabel, getStatusColor, getStatusLabel } from '@/lib/utils'
 import type { Booking } from '@/types'
 
-function getNextDays(n: number): string[] {
-  return Array.from({ length: n }, (_, i) => {
-    const d = new Date()
-    d.setDate(d.getDate() + i + 1)
-    return toDateString(d)
-  })
-}
-
 export default function InstructorPage() {
   const supabase = createClient()
   const today = toDateString(new Date())
@@ -26,45 +18,17 @@ export default function InstructorPage() {
 
   useEffect(() => { init() }, [])
 
+  // Identidad + reservas de hoy y próximos 7 días en una sola llamada server-side
+  // (/api/instructor/bookings) — antes eran 2 saltos de red seguidos (auth.me, luego datos).
   async function init() {
-    // Identidad + nombre vía /api/auth/me (getSessionUser canónico) en un solo salto —
-    // staff.name e instructors.name siempre coinciden (se crean juntos en /api/staff/invite),
-    // así que no hace falta una segunda consulta a instructors solo para el nombre.
-    const meRes = await fetch('/api/auth/me')
-    if (!meRes.ok) { setLoading(false); return }
-    const me = await meRes.json()
-    if (me.role === 'instructor') {
-      setInstructorId(me.id)
-      setInstructorName(me.name ?? '')
-      await Promise.all([fetchToday(me.id), fetchUpcoming(me.id)])
-    } else {
-      setLoading(false)
-    }
-  }
-
-  async function fetchToday(id: string) {
-    const { data } = await supabase
-      .from('bookings')
-      .select('*, student:students(full_name, order_number)')
-      .eq('instructor_id', id)
-      .eq('practice_date', today)
-      .neq('status', 'cancelled')
-      .order('start_time', { ascending: true })
-    if (data) setBookings(data)
+    const res = await fetch('/api/instructor/bookings')
+    if (!res.ok) { setLoading(false); return }
+    const data = await res.json()
+    setInstructorId(data.id ?? null)
+    setInstructorName(data.name ?? '')
+    setBookings(data.today ?? [])
+    setUpcoming(data.upcoming ?? [])
     setLoading(false)
-  }
-
-  async function fetchUpcoming(id: string) {
-    const next7 = getNextDays(7)
-    const { data } = await supabase
-      .from('bookings')
-      .select('*, student:students(full_name, order_number)')
-      .eq('instructor_id', id)
-      .in('practice_date', next7)
-      .neq('status', 'cancelled')
-      .order('practice_date', { ascending: true })
-      .order('start_time', { ascending: true })
-    if (data) setUpcoming(data)
   }
 
   async function markCompleted(booking: Booking) {
@@ -74,7 +38,7 @@ export default function InstructorPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ studentId: booking.student_id, instructorId: booking.instructor_id }),
     }).catch(() => {})
-    if (instructorId) fetchToday(instructorId)
+    init()
   }
 
   const completedCount = bookings.filter(b => b.status === 'completed').length

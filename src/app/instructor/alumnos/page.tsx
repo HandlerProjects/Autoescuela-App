@@ -15,22 +15,14 @@ export default function InstructorAlumnosPage() {
 
   useEffect(() => { init() }, [])
 
+  // Identidad + lista de alumnos en una sola llamada server-side
+  // (/api/instructor/alumnos) en vez de /api/auth/me seguido de la consulta a students.
   async function init() {
-    // Identidad y rol resueltos vía getSessionUser() (canónico, src/lib/auth.ts) en vez de
-    // consultar la tabla instructors directamente desde el cliente.
-    const meRes = await fetch('/api/auth/me')
-    if (!meRes.ok) { setLoading(false); return }
-    const me = await meRes.json()
-    if (me.role === 'instructor') {
-      setInstructorId(me.id)
-      const { data } = await supabase
-        .from('students')
-        .select('*')
-        .eq('instructor_id', me.id)
-        .eq('is_active', true)
-        .order('order_number', { ascending: true })
-      if (data) setStudents(data)
-    }
+    const res = await fetch('/api/instructor/alumnos')
+    if (!res.ok) { setLoading(false); return }
+    const data = await res.json()
+    setInstructorId(data.id ?? null)
+    setStudents(data.students ?? [])
     setLoading(false)
   }
 

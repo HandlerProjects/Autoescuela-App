@@ -7,6 +7,10 @@ export interface AuthUser {
   id: string
   role: UserRole
   name: string | null
+  // Solo presente cuando role === 'instructor'. Se resuelve aquí (server-side, mismo
+  // request) para que las pantallas del instructor no necesiten una segunda llamada de
+  // red aparte solo para saber sus tipos de práctica — ver /api/auth/me.
+  practiceTypes?: ('car' | 'truck' | 'moto')[]
 }
 
 export async function getSessionUser(): Promise<AuthUser | null> {
@@ -36,7 +40,17 @@ export async function getSessionUser(): Promise<AuthUser | null> {
       return null
     }
 
-    return { id: user.id, role: staff.role as UserRole, name: staff.name ?? null }
+    let practiceTypes: AuthUser['practiceTypes']
+    if (staff.role === 'instructor') {
+      const { data: instructor } = await supabaseAdmin
+        .from('instructors')
+        .select('practice_types')
+        .eq('id', user.id)
+        .single()
+      practiceTypes = instructor?.practice_types ?? undefined
+    }
+
+    return { id: user.id, role: staff.role as UserRole, name: staff.name ?? null, practiceTypes }
   } catch {
     return null
   }

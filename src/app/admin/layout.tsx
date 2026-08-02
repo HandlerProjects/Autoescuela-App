@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useState, useEffect } from 'react'
 
 const INSTRUCTOR_ROUTES = ['/admin', '/admin/calendario', '/admin/alumnos', '/admin/tablon', '/admin/examenes', '/admin/alertas', '/admin/festivos']
-const SECRETARY_ROUTES = ['/admin', '/admin/alumnos', '/admin/tablon', '/admin/pagos', '/admin/alertas', '/admin/cuadrante']
+const SECRETARY_ROUTES = ['/admin', '/admin/alumnos', '/admin/tablon', '/admin/pagos', '/admin/alertas', '/admin/cuadrante', '/admin/examenes']
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin',

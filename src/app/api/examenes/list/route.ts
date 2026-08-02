@@ -5,8 +5,6 @@ import { getSessionUser } from '@/lib/auth'
 export async function GET() {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-  // La secretaría no gestiona el seguimiento de exámenes
-  if (user.role === 'secretary') return NextResponse.json({ error: 'Prohibido' }, { status: 403 })
 
   const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

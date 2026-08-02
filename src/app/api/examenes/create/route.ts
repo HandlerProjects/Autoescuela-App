@@ -5,7 +5,6 @@ import { getSessionUser } from '@/lib/auth'
 export async function POST(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-  if (user.role === 'secretary') return NextResponse.json({ error: 'Prohibido' }, { status: 403 })
 
   const { student_id, exam_type, exam_date, result, attempt_number, notes } = await req.json()
   if (!student_id || !exam_type || !exam_date) {
@@ -18,22 +17,28 @@ export async function POST(req: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // Un instructor solo puede registrar exámenes de sus propios alumnos
-  if (user.role === 'instructor') {
-    const { data: student } = await supabaseAdmin
-      .from('students')
-      .select('instructor_id')
-      .eq('id', student_id)
-      .single()
+  const { data: student } = await supabaseAdmin
+    .from('students')
+    .select('instructor_id')
+    .eq('id', student_id)
+    .single()
 
-    if (!student || student.instructor_id !== user.id) {
+  if (!student) return NextResponse.json({ error: 'Alumno no encontrado' }, { status: 404 })
+
+  // Un instructor solo puede registrar exámenes de sus propios alumnos. Admin y
+  // secretaría no son instructores — el instructor_id del examen se toma siempre
+  // del propio alumno, nunca de quien rellena el formulario.
+  if (user.role === 'instructor') {
+    if (student.instructor_id !== user.id) {
       return NextResponse.json({ error: 'Prohibido' }, { status: 403 })
     }
+  } else if (!student.instructor_id) {
+    return NextResponse.json({ error: 'Este alumno todavía no tiene instructor asignado' }, { status: 400 })
   }
 
   const { error } = await supabaseAdmin.from('exams').insert({
     student_id,
-    instructor_id: user.id,
+    instructor_id: student.instructor_id,
     exam_type,
     exam_date,
     result: result ?? 'pending',

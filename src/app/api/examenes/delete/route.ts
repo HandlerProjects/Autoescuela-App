@@ -5,7 +5,6 @@ import { getSessionUser } from '@/lib/auth'
 export async function DELETE(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-  if (user.role === 'secretary') return NextResponse.json({ error: 'Prohibido' }, { status: 403 })
 
   const { id } = await req.json()
   if (!id) return NextResponse.json({ error: 'id obligatorio' }, { status: 400 })

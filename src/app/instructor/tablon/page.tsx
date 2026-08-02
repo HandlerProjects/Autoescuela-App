@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { getPracticeLabel } from '@/lib/utils'
 import type { PracticeType } from '@/types'
 
@@ -35,8 +34,6 @@ const TYPE_COLORS: Record<PracticeType, { bg: string; color: string; emoji: stri
 }
 
 export default function TablonPage() {
-  const supabase = createClient()
-
   const [instructorId, setInstructorId] = useState<string | null>(null)
   const [instructorName, setInstructorName] = useState('')
   const [instructorTypes, setInstructorTypes] = useState<PracticeType[]>([])
@@ -58,22 +55,16 @@ export default function TablonPage() {
   }, [])
 
   async function init() {
+    // /api/auth/me ya trae practiceTypes para el rol instructor (resuelto server-side) —
+    // antes hacía falta una segunda consulta aparte a la tabla instructors para esto.
     const meRes = await fetch('/api/auth/me')
     if (!meRes.ok) return
     const me = await meRes.json()
     if (me.role !== 'instructor') return
 
-    const { data: instructor } = await supabase
-      .from('instructors')
-      .select('id, name, practice_types')
-      .eq('id', me.id)
-      .single()
-
-    if (instructor) {
-      setInstructorId(instructor.id)
-      setInstructorName(instructor.name)
-      setInstructorTypes(instructor.practice_types ?? ['car'])
-    }
+    setInstructorId(me.id)
+    setInstructorName(me.name ?? '')
+    setInstructorTypes(me.practiceTypes ?? ['car'])
   }
 
   async function loadQueue() {
