@@ -415,6 +415,7 @@ export default function StudentPage() {
           practiceType: selectedType,
           practiceSubtype: selectedSubtype,
           pickupLocation: selectedLocation || null,
+          weekBooking: true,
         }),
       })
       const result = await res.json()
