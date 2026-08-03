@@ -11,26 +11,31 @@ const MIN_ADVANCE_HOURS_BOOKING = 0.5
 // Antelación para CANCELAR sin que cuente como no-presentado — se mantiene aparte a propósito:
 // bajar la de reservar no debe relajar también la política de no-shows.
 const MIN_ADVANCE_HOURS_CANCEL = 24
-const MAX_BOOKING_DAYS = 7
-
 const PICKUP_LOCATIONS = [
   'Estación de autobuses · Jardinillos',
   'Av. Ramón Carande · frente al Bar Roma',
 ]
 
-function getNextWorkingDays(count: number): Date[] {
+function getAvailableCalendarDays(): Date[] {
+  const now = new Date()
+  const cutoff = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
   const days: Date[] = []
   const current = new Date()
+  current.setDate(current.getDate() + 1)
   current.setHours(0, 0, 0, 0)
-
-  while (days.length < count) {
-    current.setDate(current.getDate() + 1)
-    const day = current.getDay()
-    if (day !== 0 && day !== 6) {
+  while (current <= cutoff) {
+    const dayOfWeek = current.getDay()
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
       days.push(new Date(current))
     }
+    current.setDate(current.getDate() + 1)
   }
   return days
+}
+
+function isSlotBeyondWindow(dateStr: string, timeStr: string): boolean {
+  const slotDt = new Date(`${dateStr}T${timeStr}:00`)
+  return slotDt > new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 }
 
 function hoursUntil(dateStr: string, timeStr: string): number {
@@ -86,7 +91,11 @@ export default function StudentPage() {
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState('')
 
-  const workingDays = getNextWorkingDays(MAX_BOOKING_DAYS)
+  // Week booking state
+  const [bookingAllWeek, setBookingAllWeek] = useState(false)
+  const [weekBookingResults, setWeekBookingResults] = useState<{ date: string; ok: boolean; error?: string }[]>([])
+
+  const availableDays = getAvailableCalendarDays()
 
   useEffect(() => { loadStudent() }, [token])
 
@@ -155,8 +164,8 @@ export default function StudentPage() {
   // propio alumno, así que huecos ocupados por otros alumnos del mismo instructor se veían
   // como libres. Se resuelve server-side con service role, igual que /api/booking/create.
   async function fetchAvailability(studentId: string, instructorId: string) {
-    const from = toDateString(workingDays[0])
-    const to = toDateString(workingDays[workingDays.length - 1])
+    const from = toDateString(availableDays[0] ?? new Date())
+    const to = toDateString(availableDays[availableDays.length - 1] ?? new Date())
     const res = await fetch('/api/booking/availability', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -214,7 +223,7 @@ export default function StudentPage() {
     const breakMins = instructor?.break_minutes ?? 10
     return generateTimeSlots(type, subtype, getInstructorSessions(), breakMins).map(slot => ({
       time: slot,
-      taken: isSlotBlocked(date, slot, type, subtype) || isSlotTooSoon(date, slot),
+      taken: isSlotBlocked(date, slot, type, subtype) || isSlotTooSoon(date, slot) || isSlotBeyondWindow(date, slot),
     }))
   }
 
@@ -374,6 +383,73 @@ export default function StudentPage() {
     setSubmitting(false)
   }
 
+  async function confirmWeekBooking() {
+    if (!student || !selectedSlot) return
+    setBookingAllWeek(true)
+    setSubmitting(true)
+    setSubmitError('')
+
+    const [h, m] = selectedSlot.split(':').map(Number)
+    const duration = getDuration(selectedType, selectedSubtype)
+    const endMinutes = h * 60 + m + duration
+    const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
+
+    const daysToBook = availableDays
+      .map(d => toDateString(d))
+      .filter(dateStr => {
+        const slots = getSlotsForDay(dateStr, selectedType, selectedSubtype)
+        return slots.some(s => s.time === selectedSlot && !s.taken)
+      })
+
+    const results: { date: string; ok: boolean; error?: string }[] = []
+    for (const dateStr of daysToBook) {
+      const res = await fetch('/api/booking/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          studentId: student.id,
+          practiceDate: dateStr,
+          startTime: selectedSlot,
+          endTime,
+          practiceType: selectedType,
+          practiceSubtype: selectedSubtype,
+          pickupLocation: selectedLocation || null,
+        }),
+      })
+      const result = await res.json()
+      results.push({ date: dateStr, ok: res.ok, error: res.ok ? undefined : (result.error ?? 'Error') })
+
+      if (res.ok && result.bookingId) {
+        fetch('/api/notify-instructor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instructorId: student.instructor_id,
+            studentId: student.id,
+            studentToken: token,
+            studentName: student.full_name,
+            practiceDate: dateStr,
+            startTime: selectedSlot,
+            practiceType: selectedType,
+            practiceSubtype: selectedSubtype,
+            pickupLocation: selectedLocation || null,
+            action: 'booked',
+          }),
+        }).catch(() => {})
+      }
+    }
+
+    setWeekBookingResults(results)
+    await Promise.all([
+      fetchMyBookings(student.id),
+      fetchAllBookings(student.id),
+      ...(student.instructor_id ? [fetchAvailability(student.id, student.instructor_id)] : []),
+    ])
+    setStep('success')
+    setSubmitting(false)
+  }
+
   function resetBooking() {
     setStep('type')
     setSelectedDate('')
@@ -381,6 +457,8 @@ export default function StudentPage() {
     setSelectedSubtype(null)
     setSelectedLocation('')
     setSubmitError('')
+    setBookingAllWeek(false)
+    setWeekBookingResults([])
   }
 
   // ── Loading ───────────────────────────────────────────────────────────────
@@ -770,16 +848,40 @@ export default function StudentPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <p className="text-white font-black text-xl">¡Reserva confirmada!</p>
-              <p className="text-sm mt-2" style={{ color: '#6b8ab0' }}>
-                {getDayName(selectedDate)}, {formatDate(selectedDate)}
-              </p>
-              <p className="text-sm" style={{ color: '#6b8ab0' }}>
-                {selectedSlot} · {getPracticeLabel(selectedType, selectedSubtype)} · {getDuration(selectedType, selectedSubtype)} min
-              </p>
+              {bookingAllWeek ? (
+                <>
+                  <p className="text-white font-black text-xl">¡Semana reservada!</p>
+                  <p className="text-sm mt-1 mb-4" style={{ color: '#6b8ab0' }}>
+                    {selectedSlot} · {getPracticeLabel(selectedType, selectedSubtype)}
+                  </p>
+                  <div className="space-y-1.5 text-left mb-4">
+                    {weekBookingResults.map(r => (
+                      <div key={r.date} className="flex items-center justify-between px-3 py-2 rounded-xl text-sm" style={{ background: '#0a1220', border: `1px solid ${r.ok ? '#1a2d45' : 'rgba(239,68,68,0.2)'}` }}>
+                        <span className="font-bold" style={{ color: r.ok ? 'white' : '#f87171' }}>
+                          {getDayName(r.date)}, {formatDate(r.date)}
+                        </span>
+                        {r.ok
+                          ? <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399' }}>OK</span>
+                          : <span className="text-xs" style={{ color: '#f87171' }}>{r.error}</span>
+                        }
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-white font-black text-xl">¡Reserva confirmada!</p>
+                  <p className="text-sm mt-2" style={{ color: '#6b8ab0' }}>
+                    {getDayName(selectedDate)}, {formatDate(selectedDate)}
+                  </p>
+                  <p className="text-sm" style={{ color: '#6b8ab0' }}>
+                    {selectedSlot} · {getPracticeLabel(selectedType, selectedSubtype)} · {getDuration(selectedType, selectedSubtype)} min
+                  </p>
+                </>
+              )}
               <button
                 onClick={resetBooking}
-                className="mt-6 px-6 py-3 rounded-xl text-sm font-bold text-white transition"
+                className="mt-4 px-6 py-3 rounded-xl text-sm font-bold text-white transition"
                 style={{ background: '#0057B8' }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0057B8'}
@@ -870,7 +972,7 @@ export default function StudentPage() {
                 <p className="text-white font-bold">Elige un día</p>
               </div>
               <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-                {workingDays.map(day => {
+                {availableDays.map(day => {
                   const dateStr = toDateString(day)
                   const blockedDay = blockedDays.find(b => b.date === dateStr)
                   const slots = getSlotsForDay(dateStr, selectedType, selectedSubtype)
@@ -1083,6 +1185,48 @@ export default function StudentPage() {
               >
                 {submitting ? 'Confirmando...' : '✓ Confirmar práctica'}
               </button>
+
+              {/* Reservar semana completa */}
+              {(() => {
+                const weekDays = availableDays
+                  .map(d => toDateString(d))
+                  .filter(dateStr => {
+                    const slots = getSlotsForDay(dateStr, selectedType, selectedSubtype)
+                    return slots.some(s => s.time === selectedSlot && !s.taken)
+                  })
+                if (weekDays.length < 2) return null
+                return (
+                  <div className="pt-1">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="flex-1 h-px" style={{ background: '#1a2d45' }} />
+                      <span className="text-xs" style={{ color: '#3a5070' }}>o también</span>
+                      <div className="flex-1 h-px" style={{ background: '#1a2d45' }} />
+                    </div>
+                    <div className="rounded-xl p-3 mb-3" style={{ background: '#0a1220', border: '1px solid #1a2d45' }}>
+                      <p className="text-xs font-semibold mb-1.5" style={{ color: '#6b8ab0' }}>Reservar toda la semana a las {selectedSlot}:</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {weekDays.map(dateStr => (
+                          <span key={dateStr} className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: '#0057B815', color: '#5a9fe0', border: '1px solid #0057B830' }}>
+                            {getDayName(dateStr).substring(0, 3)} {formatDate(dateStr).split(' ')[0]}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      onClick={confirmWeekBooking}
+                      disabled={submitting || !selectedLocation}
+                      className="w-full py-3 rounded-xl text-sm font-bold transition"
+                      style={{
+                        background: '#0a1a2e',
+                        border: `1.5px solid ${submitting || !selectedLocation ? '#1a2d45' : '#0057B860'}`,
+                        color: submitting || !selectedLocation ? '#3a5070' : '#5a9fe0',
+                      }}
+                    >
+                      {submitting ? 'Reservando...' : `Reservar semana completa (${weekDays.length} días)`}
+                    </button>
+                  </div>
+                )
+              })()}
             </div>
           )}
           </>)}

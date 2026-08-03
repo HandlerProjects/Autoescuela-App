@@ -33,6 +33,13 @@ export async function POST(req: NextRequest) {
 
   const today = new Date().toISOString().split('T')[0]
 
+  // Comprobar ventana de 7 días naturales
+  const slotDt = new Date(`${practiceDate}T${startTime}:00`)
+  const windowCutoff = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  if (slotDt > windowCutoff) {
+    return NextResponse.json({ error: 'Solo puedes reservar dentro de los próximos 7 días naturales.' }, { status: 409 })
+  }
+
   // Comprobar que el día no está bloqueado
   const { data: blockedDay } = await supabaseAdmin
     .from('blocked_days')
