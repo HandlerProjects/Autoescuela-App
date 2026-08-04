@@ -6,7 +6,6 @@ export async function POST(req: NextRequest) {
     token, studentId,
     practiceDate, startTime, endTime,
     practiceType, practiceSubtype, pickupLocation,
-    weekBooking,
   } = await req.json()
 
   if (!token || !studentId || !practiceDate || !startTime || !endTime || !practiceType) {
@@ -52,27 +51,6 @@ export async function POST(req: NextRequest) {
 
   if (blockedDay) {
     return NextResponse.json({ error: 'Este día está bloqueado. El instructor no está disponible.' }, { status: 409 })
-  }
-
-  // En reserva de semana completa, las reservas se crean todas a la vez, así que
-  // no se aplica el límite de concurrentes (se aplica el semanal igualmente).
-  // Comprobar límite de reservas activas simultáneas — solo cuentan las que AÚN NO
-  // han terminado. Antes contaba todas las "confirmed" sin mirar fecha/hora, así que
-  // una práctica ya pasada que nadie marcó "Completada" bloqueaba al alumno para
-  // siempre, sin poder volver a reservar nunca más.
-  if (!weekBooking && student.max_concurrent_bookings) {
-    const { data: confirmedBookings } = await supabaseAdmin
-      .from('bookings')
-      .select('practice_date, end_time')
-      .eq('student_id', studentId)
-      .eq('status', 'confirmed')
-
-    const nowMadrid = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Madrid' }).replace(' ', 'T')
-    const activeCount = (confirmedBookings ?? []).filter(b => `${b.practice_date}T${b.end_time}` > nowMadrid).length
-
-    if (activeCount >= student.max_concurrent_bookings) {
-      return NextResponse.json({ error: `Tienes el máximo de ${student.max_concurrent_bookings} reservas activas permitidas.` }, { status: 409 })
-    }
   }
 
   // Comprobar límite diario
