@@ -177,8 +177,6 @@ export default function StudentPage() {
     setTakenSlots(data.takenSlots ?? [])
     setBlockedSlots(data.blockedSlots ?? [])
     setBlockedDays(data.blockedDays ?? [])
-    // DEBUG temporal — eliminar tras investigar
-    console.log('[AVAILABILITY]', { takenSlots: data.takenSlots, blockedSlots: data.blockedSlots, blockedDays: data.blockedDays })
   }
 
   function toMins(t: string): number {
