@@ -385,7 +385,7 @@ export default function StudentPage() {
   }
 
   async function confirmWeekBooking() {
-    if (!student || !selectedSlot) return
+    if (!student || !selectedSlot || !student.instructor_id) return
     setBookingAllWeek(true)
     setSubmitting(true)
     setSubmitError('')
@@ -395,7 +395,50 @@ export default function StudentPage() {
     const endMinutes = h * 60 + m + duration
     const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
 
-    const daysToBook = [...selectedWeekDays].sort()
+    // Consultar disponibilidad real en el servidor justo antes de reservar,
+    // para no basarnos en datos de estado que pueden estar desfasados
+    const from = toDateString(availableDays[0] ?? new Date())
+    const to = toDateString(availableDays[availableDays.length - 1] ?? new Date())
+    let freshTaken: { date: string; start: string; type: PracticeType; subtype: PracticeSubtype | null }[] = takenSlots
+    let freshBlocked: { date: string; start: string; end: string }[] = blockedSlots
+    let freshBlockedDays: { date: string; reason: string | null }[] = blockedDays
+
+    try {
+      const availRes = await fetch('/api/booking/availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, studentId: student.id, instructorId: student.instructor_id, from, to }),
+      })
+      if (availRes.ok) {
+        const availData = await availRes.json()
+        freshTaken = availData.takenSlots ?? freshTaken
+        freshBlocked = availData.blockedSlots ?? freshBlocked
+        freshBlockedDays = availData.blockedDays ?? freshBlockedDays
+      }
+    } catch { /* Si el preflight falla usamos el estado actual */ }
+
+    // Filtrar con datos frescos cuáles días siguen disponibles
+    const sStart = toMins(selectedSlot)
+    const sEnd = sStart + getDuration(selectedType, selectedSubtype) + getSlotBreak(selectedType, selectedSubtype)
+
+    const daysToBook = [...selectedWeekDays].sort().filter(dateStr => {
+      if (freshBlockedDays.some(b => b.date === dateStr)) return false
+      if (isSlotTooSoon(dateStr, selectedSlot)) return false
+      if (isSlotBeyondWindow(dateStr, selectedSlot)) return false
+      const overlapsBooking = freshTaken.some(t => {
+        if (t.date !== dateStr) return false
+        const bStart = toMins(t.start)
+        const bEnd = bStart + getDuration(t.type, t.subtype) + getSlotBreak(t.type, t.subtype)
+        return bStart < sEnd && sStart < bEnd
+      })
+      const overlapsBlock = freshBlocked.some(b => {
+        if (b.date !== dateStr) return false
+        const bStart = toMins(b.start)
+        const bEnd = toMins(b.end)
+        return bStart < sEnd && sStart < bEnd
+      })
+      return !overlapsBooking && !overlapsBlock
+    })
 
     const results: { date: string; ok: boolean; error?: string }[] = []
     for (const dateStr of daysToBook) {
@@ -411,7 +454,6 @@ export default function StudentPage() {
           practiceType: selectedType,
           practiceSubtype: selectedSubtype,
           pickupLocation: selectedLocation || null,
-          weekBooking: true,
         }),
       })
       const result = await res.json()
@@ -441,7 +483,7 @@ export default function StudentPage() {
     await Promise.all([
       fetchMyBookings(student.id),
       fetchAllBookings(student.id),
-      ...(student.instructor_id ? [fetchAvailability(student.id, student.instructor_id)] : []),
+      fetchAvailability(student.id, student.instructor_id),
     ])
     setStep('success')
     setSubmitting(false)
