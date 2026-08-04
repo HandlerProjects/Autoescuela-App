@@ -21,7 +21,6 @@ function getAvailableCalendarDays(): Date[] {
   const cutoff = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
   const days: Date[] = []
   const current = new Date()
-  current.setDate(current.getDate() + 1)
   current.setHours(0, 0, 0, 0)
   while (current <= cutoff) {
     const dayOfWeek = current.getDay()
