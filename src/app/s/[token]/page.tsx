@@ -94,6 +94,7 @@ export default function StudentPage() {
   // Week booking state
   const [bookingAllWeek, setBookingAllWeek] = useState(false)
   const [weekBookingResults, setWeekBookingResults] = useState<{ date: string; ok: boolean; error?: string }[]>([])
+  const [selectedWeekDays, setSelectedWeekDays] = useState<Set<string>>(new Set())
 
   const availableDays = getAvailableCalendarDays()
 
@@ -394,12 +395,7 @@ export default function StudentPage() {
     const endMinutes = h * 60 + m + duration
     const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
 
-    const daysToBook = availableDays
-      .map(d => toDateString(d))
-      .filter(dateStr => {
-        const slots = getSlotsForDay(dateStr, selectedType, selectedSubtype)
-        return slots.some(s => s.time === selectedSlot && !s.taken)
-      })
+    const daysToBook = [...selectedWeekDays].sort()
 
     const results: { date: string; ok: boolean; error?: string }[] = []
     for (const dateStr of daysToBook) {
@@ -460,6 +456,7 @@ export default function StudentPage() {
     setSubmitError('')
     setBookingAllWeek(false)
     setWeekBookingResults([])
+    setSelectedWeekDays(new Set())
   }
 
   // ── Loading ───────────────────────────────────────────────────────────────
@@ -1069,7 +1066,16 @@ export default function StudentPage() {
                     .map(({ time, taken }) => (
                       <button
                         key={time}
-                        onClick={() => { setSelectedSlot(time); setStep('confirm') }}
+                        onClick={() => {
+                          setSelectedSlot(time)
+                          setSelectedWeekDays(new Set(
+                            availableDays.map(d => toDateString(d)).filter(dateStr => {
+                              const slots = getSlotsForDay(dateStr, selectedType, selectedSubtype)
+                              return slots.some(s => s.time === time && !s.taken)
+                            })
+                          ))
+                          setStep('confirm')
+                        }}
                         disabled={taken}
                         className="py-3 rounded-xl text-sm font-bold transition-all duration-150"
                         style={{
@@ -1095,7 +1101,16 @@ export default function StudentPage() {
                     .map(({ time, taken }) => (
                       <button
                         key={time}
-                        onClick={() => { setSelectedSlot(time); setStep('confirm') }}
+                        onClick={() => {
+                          setSelectedSlot(time)
+                          setSelectedWeekDays(new Set(
+                            availableDays.map(d => toDateString(d)).filter(dateStr => {
+                              const slots = getSlotsForDay(dateStr, selectedType, selectedSubtype)
+                              return slots.some(s => s.time === time && !s.taken)
+                            })
+                          ))
+                          setStep('confirm')
+                        }}
                         disabled={taken}
                         className="py-3 rounded-xl text-sm font-bold transition-all duration-150"
                         style={{
@@ -1187,43 +1202,74 @@ export default function StudentPage() {
                 {submitting ? 'Confirmando...' : '✓ Confirmar práctica'}
               </button>
 
-              {/* Reservar semana completa */}
-              {(() => {
-                const weekDays = availableDays
-                  .map(d => toDateString(d))
-                  .filter(dateStr => {
+              {/* También te puede interesar */}
+              {selectedWeekDays.size > 0 && (() => {
+                const DAY_LETTER: Record<number, string> = { 1: 'L', 2: 'M', 3: 'X', 4: 'J', 5: 'V', 6: 'S' }
+                const allWindowDays = availableDays.map(d => toDateString(d))
+                const availableForSlot = new Set(
+                  allWindowDays.filter(dateStr => {
                     const slots = getSlotsForDay(dateStr, selectedType, selectedSubtype)
                     return slots.some(s => s.time === selectedSlot && !s.taken)
                   })
-                if (weekDays.length < 2) return null
+                )
+                if (availableForSlot.size < 2) return null
+                const selectedCount = [...selectedWeekDays].filter(d => availableForSlot.has(d)).length
                 return (
-                  <div className="pt-1">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="flex-1 h-px" style={{ background: '#1a2d45' }} />
-                      <span className="text-xs" style={{ color: '#3a5070' }}>o también</span>
-                      <div className="flex-1 h-px" style={{ background: '#1a2d45' }} />
-                    </div>
-                    <div className="rounded-xl p-3 mb-3" style={{ background: '#0a1220', border: '1px solid #1a2d45' }}>
-                      <p className="text-xs font-semibold mb-1.5" style={{ color: '#6b8ab0' }}>Reservar toda la semana a las {selectedSlot}:</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {weekDays.map(dateStr => (
-                          <span key={dateStr} className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: '#0057B815', color: '#5a9fe0', border: '1px solid #0057B830' }}>
-                            {getDayName(dateStr).substring(0, 3)} {formatDate(dateStr).split(' ')[0]}
-                          </span>
-                        ))}
-                      </div>
+                  <div className="pt-2">
+                    <p className="text-xs font-semibold mb-2" style={{ color: '#3a5070' }}>
+                      También te puede interesar a las {selectedSlot}:
+                    </p>
+                    <div className="flex gap-1.5 mb-3">
+                      {allWindowDays.map(dateStr => {
+                        const dayOfWeek = new Date(dateStr + 'T12:00:00').getDay()
+                        const letter = DAY_LETTER[dayOfWeek] ?? '?'
+                        const isAvailable = availableForSlot.has(dateStr)
+                        const isSelected = selectedWeekDays.has(dateStr)
+                        return (
+                          <button
+                            key={dateStr}
+                            onClick={() => {
+                              if (!isAvailable) return
+                              setSelectedWeekDays(prev => {
+                                const next = new Set(prev)
+                                if (next.has(dateStr)) next.delete(dateStr)
+                                else next.add(dateStr)
+                                return next
+                              })
+                            }}
+                            disabled={!isAvailable}
+                            className="flex flex-col items-center flex-1 py-2.5 rounded-xl transition-all duration-150"
+                            style={{
+                              background: !isAvailable ? '#080f1a' : isSelected ? '#0057B820' : '#0a1220',
+                              border: `1.5px solid ${!isAvailable ? '#0d1829' : isSelected ? '#0057B8' : '#1a2d45'}`,
+                              cursor: isAvailable ? 'pointer' : 'default',
+                            }}
+                          >
+                            <span className="text-sm font-black" style={{ color: !isAvailable ? '#1a2d45' : isSelected ? '#5a9fe0' : '#3a5070' }}>
+                              {letter}
+                            </span>
+                            <span className="text-[9px] font-semibold mt-0.5" style={{ color: !isAvailable ? '#0f1c2e' : isSelected ? '#2a5a80' : '#1a3050' }}>
+                              {formatDate(dateStr).split(' ')[0]}
+                            </span>
+                          </button>
+                        )
+                      })}
                     </div>
                     <button
                       onClick={confirmWeekBooking}
-                      disabled={submitting || !selectedLocation}
+                      disabled={submitting || !selectedLocation || selectedCount === 0}
                       className="w-full py-3 rounded-xl text-sm font-bold transition"
                       style={{
                         background: '#0a1a2e',
-                        border: `1.5px solid ${submitting || !selectedLocation ? '#1a2d45' : '#0057B860'}`,
-                        color: submitting || !selectedLocation ? '#3a5070' : '#5a9fe0',
+                        border: `1.5px solid ${submitting || !selectedLocation || selectedCount === 0 ? '#1a2d45' : '#0057B860'}`,
+                        color: submitting || !selectedLocation || selectedCount === 0 ? '#3a5070' : '#5a9fe0',
                       }}
                     >
-                      {submitting ? 'Reservando...' : `Reservar semana completa (${weekDays.length} días)`}
+                      {submitting
+                        ? 'Reservando...'
+                        : selectedCount === 0
+                          ? 'Selecciona al menos un día'
+                          : `Reservar ${selectedCount} día${selectedCount > 1 ? 's' : ''} seleccionado${selectedCount > 1 ? 's' : ''}`}
                     </button>
                   </div>
                 )
