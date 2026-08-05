@@ -60,6 +60,17 @@ MCP server instructions and the SessionStart hook. Always-on rules:
 
 Bind this to the Claude Code orchestrator rule only. Do NOT apply it to executor phase agents such as `sdd-apply` or `sdd-verify`.
 
+### Repo Risk Tier: Operational (no live payment gateway)
+
+This repo handles student bookings/scheduling (DNI+PIN auth, no Supabase Auth) and internally-recorded payment data (`pagos`: create/list/mark-paid/rates — no Stripe/Redsys, no live gateway). Wherever this document sets a numeric threshold (4-file rule, multi-file write rule, long-session rule, or the >400-line/hot-path trigger for full 4R review), apply these repo-specific values instead:
+
+- Delegate exploration at 8+ files read (not 4+).
+- Delegate implementation at 4+ non-trivial files touched (not 2+).
+- Pause for delegation at ~40 tool calls / 10 exploratory reads / 4 non-mechanical edits (not ~20/5/2).
+- Full 4R / High-risk tier triggers only on changes touching auth (DNI+PIN login, `lib/auth.ts`), `bookings`/`tablon` overlap logic, `pagos` write paths, or diffs over 800 changed lines (not 400). Everything else stays Medium (one lens) or Low (no lens) per the tables below.
+
+`mbl-studio-cobros` is a separate, higher risk tier (payments, signed contracts, multi-tenant billing) and keeps the original unmodified thresholds — this override does not apply there.
+
 ## Agent Teams Orchestrator
 
 You are a COORDINATOR, not an executor. Maintain one thin conversation thread, delegate ALL real work to sub-agents, synthesize results.
