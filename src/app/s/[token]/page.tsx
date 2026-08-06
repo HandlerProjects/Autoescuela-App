@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { createStudentClient } from '@/lib/supabase/client'
 import { formatDate, formatTime, getDayName, toDateString, getPracticeLabel, generateTimeSlots, getDuration, getBreak } from '@/lib/utils'
+import { getInstructorSessions, isSlotOccupied } from '@/lib/horarios'
 import { BONO_SIZE, buildBonoStatus, countConsuming, SUSPENDED_MESSAGE } from '@/lib/bono'
 import type { Student, Booking, PracticeType, PracticeSubtype, Exam, Instructor } from '@/types'
 
@@ -184,50 +185,24 @@ export default function StudentPage() {
     setBlockedDays(data.blockedDays ?? [])
   }
 
-  function toMins(t: string): number {
-    const [h, m] = t.split(':').map(Number)
-    return h * 60 + m
-  }
-
-  function getSlotBreak(type: PracticeType, subtype: PracticeSubtype | null): number {
-    if (type === 'truck' && subtype === 'circulacion') return 30
-    return instructor?.break_minutes ?? 10
-  }
-
   function isSlotBlocked(date: string, slotStart: string, slotType: PracticeType, slotSubtype: PracticeSubtype | null): boolean {
-    const sStart = toMins(slotStart)
-    const sEnd = sStart + getDuration(slotType, slotSubtype) + getSlotBreak(slotType, slotSubtype)
-
-    // Comprobar overlap con otras reservas
-    const overlapsBooking = takenSlots.some(t => {
-      if (t.date !== date) return false
-      const bStart = toMins(t.start)
-      const bEnd = bStart + getDuration(t.type, t.subtype) + getSlotBreak(t.type, t.subtype)
-      return bStart < sEnd && sStart < bEnd
-    })
-
-    // Comprobar overlap con horas bloqueadas por el profesor
-    const overlapsBlock = blockedSlots.some(b => {
-      if (b.date !== date) return false
-      const bStart = toMins(b.start)
-      const bEnd = toMins(b.end)
-      return bStart < sEnd && sStart < bEnd
-    })
-
-    return overlapsBooking || overlapsBlock
-  }
-
-  function getInstructorSessions(): { start: string; end: string }[] {
-    if (!instructor) return [{ start: '08:00', end: '13:30' }, { start: '16:00', end: '19:15' }]
-    const sessions: { start: string; end: string }[] = []
-    if (instructor.schedule_morning) sessions.push({ start: instructor.morning_start.substring(0, 5), end: instructor.morning_end.substring(0, 5) })
-    if (instructor.schedule_afternoon) sessions.push({ start: instructor.afternoon_start.substring(0, 5), end: instructor.afternoon_end.substring(0, 5) })
-    return sessions.length > 0 ? sessions : [{ start: '08:00', end: '13:30' }]
+    return isSlotOccupied(
+      slotStart,
+      slotType,
+      slotSubtype,
+      instructor?.break_minutes,
+      takenSlots
+        .filter(t => t.date === date)
+        .map(t => ({ start_time: t.start, practice_type: t.type, practice_subtype: t.subtype })),
+      blockedSlots
+        .filter(b => b.date === date)
+        .map(b => ({ start_time: b.start, end_time: b.end })),
+    )
   }
 
   function getSlotsForDay(date: string, type: PracticeType, subtype: PracticeSubtype | null) {
     const breakMins = instructor?.break_minutes ?? 10
-    return generateTimeSlots(type, subtype, getInstructorSessions(), breakMins).map(slot => ({
+    return generateTimeSlots(type, subtype, getInstructorSessions(instructor), breakMins).map(slot => ({
       time: slot,
       taken: isSlotBlocked(date, slot, type, subtype) || isSlotTooSoon(date, slot) || isSlotBeyondWindow(date, slot),
     }))
@@ -429,26 +404,22 @@ export default function StudentPage() {
     } catch { /* Si el preflight falla usamos el estado actual */ }
 
     // Filtrar con datos frescos cuáles días siguen disponibles
-    const sStart = toMins(selectedSlot)
-    const sEnd = sStart + getDuration(selectedType, selectedSubtype) + getSlotBreak(selectedType, selectedSubtype)
-
     const daysToBook = [...selectedWeekDays].sort().filter(dateStr => {
       if (freshBlockedDays.some(b => b.date === dateStr)) return false
       if (isSlotTooSoon(dateStr, selectedSlot)) return false
       if (isSlotBeyondWindow(dateStr, selectedSlot)) return false
-      const overlapsBooking = freshTaken.some(t => {
-        if (t.date !== dateStr) return false
-        const bStart = toMins(t.start)
-        const bEnd = bStart + getDuration(t.type, t.subtype) + getSlotBreak(t.type, t.subtype)
-        return bStart < sEnd && sStart < bEnd
-      })
-      const overlapsBlock = freshBlocked.some(b => {
-        if (b.date !== dateStr) return false
-        const bStart = toMins(b.start)
-        const bEnd = toMins(b.end)
-        return bStart < sEnd && sStart < bEnd
-      })
-      return !overlapsBooking && !overlapsBlock
+      return !isSlotOccupied(
+        selectedSlot,
+        selectedType,
+        selectedSubtype,
+        instructor?.break_minutes,
+        freshTaken
+          .filter(t => t.date === dateStr)
+          .map(t => ({ start_time: t.start, practice_type: t.type, practice_subtype: t.subtype })),
+        freshBlocked
+          .filter(b => b.date === dateStr)
+          .map(b => ({ start_time: b.start, end_time: b.end })),
+      )
     })
 
     const results: { date: string; ok: boolean; error?: string }[] = []

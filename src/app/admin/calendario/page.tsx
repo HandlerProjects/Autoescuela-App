@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { toDateString, getDayName, formatDate, getPracticeLabel, generateTimeSlots } from '@/lib/utils'
+import { getInstructorSessions, isSlotOccupied } from '@/lib/horarios'
 import type { Booking, BlockedSlot, PracticeType, PracticeSubtype, Instructor } from '@/types'
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -62,6 +63,9 @@ export default function CalendarioPage() {
     if (res.ok) {
       const data = await res.json()
       setCurrentUserRole(data.role ?? null)
+      // Un profesor no pasa por el selector (solo ve su propio calendario), pero igualmente hay
+      // que saber quién es para generar los huecos con SU horario y no con el genérico.
+      if (data.role === 'instructor' && data.id) setSelectedInstructorId(data.id)
     }
   }
 
@@ -108,19 +112,47 @@ export default function CalendarioPage() {
     return blockedSlots.some(s => s.date === dateStr)
   }
 
+  // Profesor cuyo calendario se está mirando: el elegido si es admin, o uno mismo si es profesor.
+  const viewedInstructor = instructors.find(i => i.id === selectedInstructorId) ?? null
+
   function getFreeSlots(dateStr: string) {
-    const dateBookings = bookings.filter(b => b.practice_date === dateStr)
-    const bookedTimes = new Set(dateBookings.map(b => b.start_time.substring(0, 5)))
+    // Las horas salen del horario REAL del profesor, no del genérico 08:00–13:30 / 16:00–19:15:
+    // un profesor de media jornada mostraba huecos de tarde que no existían.
+    const sessions = getInstructorSessions(viewedInstructor)
+    const breakMins = viewedInstructor?.break_minutes ?? 10
 
-    const carFree = generateTimeSlots('car').filter(t => !bookedTimes.has(t)).map(t => ({ time: t, type: 'car' as PracticeType, subtype: null as PracticeSubtype | null }))
-    const pistafree = generateTimeSlots('truck', 'pista').filter(t => !bookedTimes.has(t)).map(t => ({ time: t, type: 'truck' as PracticeType, subtype: 'pista' as PracticeSubtype }))
-    const circFree = generateTimeSlots('truck', 'circulacion').filter(t => !bookedTimes.has(t)).map(t => ({ time: t, type: 'truck' as PracticeType, subtype: 'circulacion' as PracticeSubtype }))
-    const motoFree = generateTimeSlots('moto').filter(t => !bookedTimes.has(t)).map(t => ({ time: t, type: 'moto' as PracticeType, subtype: null as PracticeSubtype | null }))
+    // Solo las reservas vivas ocupan: una cancelada libera su hueco.
+    const dayBookings = bookings
+      .filter(b => b.practice_date === dateStr && b.status !== 'cancelled')
+      .map(b => ({
+        start_time: b.start_time,
+        practice_type: b.practice_type as PracticeType,
+        practice_subtype: b.practice_subtype,
+      }))
+    const dayBlocked = blockedSlots
+      .filter(s => s.date === dateStr)
+      .map(s => ({ start_time: s.start_time, end_time: s.end_time }))
 
-    if (filter === 'car') return carFree
-    if (filter === 'truck') return [...pistafree, ...circFree].sort((a, b) => a.time.localeCompare(b.time))
-    if (filter === 'moto') return motoFree
-    return [...carFree, ...pistafree, ...circFree, ...motoFree].sort((a, b) => a.time.localeCompare(b.time))
+    // Se descarta por SOLAPE de tramos, no por coincidencia exacta de hora de inicio: antes un
+    // hueco de las 08:55 salía como libre aunque hubiera una clase de 08:50 a 09:35 pisándolo.
+    const freeOf = (type: PracticeType, subtype: PracticeSubtype | null) =>
+      generateTimeSlots(type, subtype, sessions, breakMins)
+        .filter(t => !isSlotOccupied(t, type, subtype, breakMins, dayBookings, dayBlocked))
+        .map(t => ({ time: t, type, subtype }))
+
+    if (filter === 'car') return freeOf('car', null)
+    if (filter === 'truck') {
+      return [...freeOf('truck', 'pista'), ...freeOf('truck', 'circulacion')]
+        .sort((a, b) => a.time.localeCompare(b.time))
+    }
+    if (filter === 'moto') return freeOf('moto', null)
+
+    return [
+      ...freeOf('car', null),
+      ...freeOf('truck', 'pista'),
+      ...freeOf('truck', 'circulacion'),
+      ...freeOf('moto', null),
+    ].sort((a, b) => a.time.localeCompare(b.time))
   }
 
   function prevMonth() {
