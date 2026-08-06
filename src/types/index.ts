@@ -49,6 +49,8 @@ export interface Student {
   max_concurrent_bookings: number
   max_weekly_bookings: number
   max_daily_bookings: number
+  /** Tope acumulado de prácticas pagadas — ver lib/bono.ts */
+  practices_paid_through: number
   alert_days_inactive: number
   exam_mode: boolean
   notes: string | null

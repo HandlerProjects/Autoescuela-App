@@ -1,45 +1,40 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { formatDate } from '@/lib/utils'
-import type { Payment, Student, PaymentStatus } from '@/types'
 
-const RATES = [
-  { concept: 'Matrícula', price: null, description: 'Alta en la autoescuela' },
-  { concept: '5 clases coche', price: null, description: 'Bono 5 prácticas · Coche' },
-  { concept: '5 clases camión', price: null, description: 'Bono 5 prácticas · Camión' },
-  { concept: '10 clases coche', price: null, description: 'Bono 10 prácticas · Coche' },
-  { concept: '10 clases camión', price: null, description: 'Bono 10 prácticas · Camión' },
-  { concept: 'Examen teórico', price: null, description: 'Tasas examen teórico DGT' },
-  { concept: 'Examen práctico', price: null, description: 'Tasas examen práctico DGT' },
-  { concept: 'Tasas DGT', price: null, description: 'Gestión tasas DGT' },
-]
+// Pantalla de oficina para el bono de prácticas.
+//
+// Sustituye a la antigua gestión de cobros con importes: el dueño no quiere ver dinero en la app
+// ("hace mucho ruido y no hay que mezclar términos de precio"). Aquí solo se cuentan prácticas.
+// El histórico de la tabla `payments` se conserva en la base de datos, simplemente ya no se pinta.
+const BONO_SIZE = 5
+
+interface BonoRow {
+  id: string
+  fullName: string
+  orderNumber: number
+  used: number
+  paidThrough: number
+  remaining: number
+  suspended: boolean
+}
 
 export default function PagosPage() {
-  const [payments, setPayments] = useState<Payment[]>([])
-  const [students, setStudents] = useState<Student[]>([])
+  const [rows, setRows] = useState<BonoRow[]>([])
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
-  const [showForm, setShowForm] = useState(false)
-  const [showRates, setShowRates] = useState(false)
-  const [filter, setFilter] = useState<'all' | 'pending' | 'paid'>('all')
-  const [rates, setRates] = useState<{ [key: string]: string }>({})
-  const [editingRates, setEditingRates] = useState(false)
-  const [tempRates, setTempRates] = useState<{ [key: string]: string }>({})
-
-  // Form
-  const [studentId, setStudentId] = useState('')
-  const [amount, setAmount] = useState('')
-  const [concept, setConcept] = useState('')
-  const [dueDate, setDueDate] = useState('')
-  const [notes, setNotes] = useState('')
+  // Mismo diálogo para las dos acciones: ambas dejan al alumno con BONO_SIZE prácticas limpias.
+  // 'pago'  → la secretaría cobra el siguiente bono en el mostrador.
+  // 'reset' → alumno que entra con prácticas ya hechas por su cuenta y hay que ponerle el contador a cero.
+  const [confirming, setConfirming] = useState<{ row: BonoRow; mode: 'pago' | 'reset' } | null>(null)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => { fetchData() }, [])
 
   async function fetchData() {
     setLoading(true)
-    const res = await fetch('/api/pagos/list')
+    const res = await fetch('/api/bono/list')
     if (res.status === 403) {
       setForbidden(true)
       setLoading(false)
@@ -47,97 +42,38 @@ export default function PagosPage() {
     }
     if (res.ok) {
       const data = await res.json()
-      setPayments(data.payments ?? [])
-      setStudents(data.students ?? [])
-      const ratesMap: { [key: string]: string } = {}
-      ;(data.rates ?? []).forEach((r: { concept: string; price: number | null }) => {
-        ratesMap[r.concept] = r.price?.toString() ?? ''
-      })
-      setRates(ratesMap)
-      setTempRates(ratesMap)
+      setRows(data.students ?? [])
     }
     setLoading(false)
   }
 
-  async function saveRates() {
-    const res = await fetch('/api/pagos/rates', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rates: tempRates }),
-    })
-    if (res.ok) {
-      setRates(tempRates)
-      setEditingRates(false)
-    }
-  }
-
-  function selectConcept(c: string) {
-    setConcept(c)
-    if (rates[c]) setAmount(rates[c])
-  }
-
-  async function handleSubmit() {
-    if (!studentId || !amount || !concept) return
+  async function confirmarPago() {
+    if (!confirming) return
     setSaving(true)
+    setError('')
 
-    const res = await fetch('/api/pagos/create', {
+    const res = await fetch('/api/bono/confirmar-pago', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        student_id: studentId,
-        amount,
-        concept,
-        due_date: dueDate || null,
-        notes: notes.trim() || null,
-      }),
+      body: JSON.stringify({ studentId: confirming.row.id }),
     })
 
     if (res.ok) {
-      setShowForm(false)
-      setStudentId('')
-      setAmount('')
-      setConcept('')
-      setDueDate('')
-      setNotes('')
-      fetchData()
+      setConfirming(null)
+      await fetchData()
     } else {
-      const data = await res.json()
-      alert(data.error ?? 'Error al registrar el cobro')
+      const data = await res.json().catch(() => ({}))
+      setError(data.error ?? 'No se pudo confirmar el pago')
     }
     setSaving(false)
   }
 
-  async function markAsPaid(id: string) {
-    const res = await fetch('/api/pagos/mark-paid', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    })
-    if (res.ok) {
-      setPayments(prev => prev.map(p => p.id === id ? { ...p, status: 'paid' as PaymentStatus, paid_at: new Date().toISOString() } : p))
-    }
-  }
-
-  async function deletePayment(id: string) {
-    if (!confirm('¿Eliminar este pago?')) return
-    const res = await fetch('/api/pagos/delete', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    })
-    if (res.ok) {
-      setPayments(prev => prev.filter(p => p.id !== id))
-    }
-  }
-
-  const filtered = filter === 'all' ? payments : payments.filter(p => p.status === filter)
-  const totalPending = payments.filter(p => p.status === 'pending').reduce((sum, p) => sum + p.amount, 0)
-  const totalPaid = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0)
-  const studentsWithDebt = [...new Set(payments.filter(p => p.status === 'pending').map(p => p.student_id))].length
+  const suspended = rows.filter(r => r.suspended)
+  const active = rows.filter(r => !r.suspended)
 
   if (forbidden) {
     return (
-      <div className="p-8">
+      <div className="px-4 py-6 md:p-8">
         <div className="rounded-2xl p-16 text-center" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
           <p className="font-semibold text-white">No tienes acceso a esta sección</p>
         </div>
@@ -146,334 +82,195 @@ export default function PagosPage() {
   }
 
   return (
-    <div className="p-8">
+    <div className="px-4 py-6 md:p-8">
 
       {/* Cabecera */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <p className="text-sm font-medium mb-1" style={{ color: '#0057B8' }}>Administración</p>
-          <h1 className="text-3xl font-black text-white tracking-tight">Pagos</h1>
-          <p className="text-sm mt-1" style={{ color: '#6b8ab0' }}>Control de cobros y deudas</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowRates(!showRates)}
-            className="flex items-center gap-2 font-bold text-sm px-4 py-3 rounded-xl transition"
-            style={{ background: '#0d1829', border: '1px solid #1a2d45', color: '#6b8ab0' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'white'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#6b8ab0'}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-            </svg>
-            Tarifas
-          </button>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 font-bold text-sm px-5 py-3 rounded-xl transition text-white"
-            style={{ background: '#0057B8' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0057B8'}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            Nuevo cobro
-          </button>
-        </div>
+      <div className="mb-6">
+        <p className="text-sm font-medium mb-1" style={{ color: '#0057B8' }}>Oficina</p>
+        <h1 className="text-3xl font-black text-white tracking-tight">Pagos</h1>
+        <p className="text-sm mt-1" style={{ color: '#6b8ab0' }}>
+          Cada alumno tiene {BONO_SIZE} prácticas. Al agotarlas no puede reservar hasta que pase por la oficina.
+        </p>
       </div>
 
-      {/* Panel tarifas */}
-      {showRates && (
-        <div className="rounded-2xl p-6 mb-6" style={{ background: '#0d1829', border: '1px solid #0057B8' }}>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-white font-bold">Tarifas de la autoescuela</p>
-              <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>Los precios se autorellenan al seleccionar el concepto · Los precios se muestran sin IVA</p>
+      {loading ? (
+        <div className="text-sm" style={{ color: '#6b8ab0' }}>Cargando...</div>
+      ) : (
+        <>
+          {/* ── PENDIENTES DE PAGO ── */}
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#fbbf24' }}>
+                Pendientes de pago
+              </p>
+              {suspended.length > 0 && (
+                <span
+                  className="text-xs font-black rounded-full flex items-center justify-center"
+                  style={{ background: '#fbbf24', color: '#0a0f1a', minWidth: '20px', height: '20px', padding: '0 6px' }}
+                >
+                  {suspended.length}
+                </span>
+              )}
             </div>
-            {!editingRates ? (
-              <button
-                onClick={() => { setEditingRates(true); setTempRates(rates) }}
-                className="text-sm font-bold px-4 py-2 rounded-xl transition"
-                style={{ background: '#0057B820', color: '#0057B8' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#0057B840'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0057B820'}
-              >
-                Editar tarifas
-              </button>
+
+            {suspended.length === 0 ? (
+              <div className="rounded-2xl p-10 text-center" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+                <p className="text-sm font-semibold" style={{ color: '#3a5070' }}>
+                  Ningún alumno tiene el saldo agotado
+                </p>
+              </div>
             ) : (
+              <div className="space-y-2">
+                {suspended.map(row => (
+                  <div
+                    key={row.id}
+                    className="rounded-2xl px-4 py-4 flex flex-wrap items-center gap-3"
+                    style={{ background: '#0d1829', border: '1.5px solid rgba(251,191,36,0.35)' }}
+                  >
+                    <div
+                      className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0"
+                      style={{ background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}
+                    >
+                      {row.fullName.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-[140px]">
+                      <p className="text-white font-bold text-sm">{row.fullName}</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#fbbf24' }}>
+                        Saldo agotado · #{row.orderNumber}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => { setConfirming({ row, mode: 'pago' }); setError('') }}
+                      className="px-4 py-2.5 rounded-xl text-sm font-bold text-white transition"
+                      style={{ background: '#0057B8' }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0057B8'}
+                    >
+                      Pagado
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── RESTO DE ALUMNOS ── */}
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: '#3a5070' }}>
+              Al corriente
+            </p>
+            {active.length === 0 ? (
+              <div className="rounded-2xl p-10 text-center" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+                <p className="text-sm font-semibold" style={{ color: '#3a5070' }}>Sin alumnos activos</p>
+              </div>
+            ) : (
+              <div className="rounded-2xl overflow-hidden" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
+                {active.map((row, idx) => (
+                  <div
+                    key={row.id}
+                    className="px-4 py-3 flex items-center gap-3"
+                    style={{ borderTop: idx === 0 ? 'none' : '1px solid #0f1c2e' }}
+                  >
+                    <p className="text-xs font-black font-mono w-8 flex-shrink-0" style={{ color: '#3a5070' }}>
+                      #{row.orderNumber}
+                    </p>
+                    <p className="text-white text-sm font-semibold flex-1">{row.fullName}</p>
+                    <span
+                      className="text-xs px-2.5 py-1 rounded-full font-bold flex-shrink-0"
+                      style={{
+                        background: row.remaining === 1 ? 'rgba(251,191,36,0.12)' : 'rgba(52,211,153,0.1)',
+                        color: row.remaining === 1 ? '#fbbf24' : '#34d399',
+                      }}
+                    >
+                      {row.remaining} {row.remaining === 1 ? 'práctica' : 'prácticas'}
+                    </span>
+                    <button
+                      onClick={() => { setConfirming({ row, mode: 'reset' }); setError('') }}
+                      className="text-xs font-semibold px-2.5 py-1 rounded-lg transition flex-shrink-0"
+                      style={{ color: '#3a5070', border: '1px solid #1a2d45' }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLElement).style.color = 'white'
+                        ;(e.currentTarget as HTMLElement).style.borderColor = '#0057B8'
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLElement).style.color = '#3a5070'
+                        ;(e.currentTarget as HTMLElement).style.borderColor = '#1a2d45'
+                      }}
+                    >
+                      Resetear
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── POPUP DE CONFIRMACIÓN ── */}
+      {confirming && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            style={{ background: 'rgba(0,0,0,0.65)' }}
+            onClick={() => { if (!saving) setConfirming(null) }}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div
+              className="w-full max-w-sm rounded-2xl p-6 pointer-events-auto"
+              style={{ background: '#0d1829', border: '1px solid #1a2d45' }}
+            >
+              <p className="text-white font-black text-lg mb-2">
+                {confirming.mode === 'pago' ? 'Confirmar pago' : 'Resetear prácticas'}
+              </p>
+              <p className="text-sm leading-relaxed mb-5" style={{ color: '#a0b8d0' }}>
+                {confirming.mode === 'pago' ? (
+                  <>
+                    ¿Confirmas que <span className="font-bold text-white">{confirming.row.fullName}</span> ha
+                    pagado su bono de {BONO_SIZE} prácticas?
+                  </>
+                ) : (
+                  <>
+                    ¿Poner a <span className="font-bold text-white">{confirming.row.fullName}</span> con {BONO_SIZE} prácticas
+                    nuevas por delante?
+                  </>
+                )}
+              </p>
+              <p className="text-xs mb-5" style={{ color: '#3a5070' }}>
+                {confirming.mode === 'pago'
+                  ? `Volverá a poder reservar durante las próximas ${BONO_SIZE} prácticas.`
+                  : `Se usa cuando un alumno empieza con prácticas ya hechas por su cuenta. Su contador vuelve a ${BONO_SIZE}, sin borrar ninguna reserva.`}
+              </p>
+
+              {error && (
+                <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>
+                  {error}
+                </p>
+              )}
+
               <div className="flex gap-2">
                 <button
-                  onClick={() => setEditingRates(false)}
-                  className="text-sm font-bold px-4 py-2 rounded-xl transition"
+                  onClick={() => setConfirming(null)}
+                  disabled={saving}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold transition"
                   style={{ background: '#0a1220', color: '#6b8ab0', border: '1px solid #1a2d45' }}
                 >
                   Cancelar
                 </button>
                 <button
-                  onClick={saveRates}
-                  className="text-sm font-bold px-4 py-2 rounded-xl transition text-white"
-                  style={{ background: '#0057B8' }}
+                  onClick={confirmarPago}
+                  disabled={saving}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition"
+                  style={{ background: '#0057B8', opacity: saving ? 0.6 : 1 }}
                 >
-                  Guardar
+                  {saving ? 'Guardando...' : confirming.mode === 'pago' ? 'Sí, ha pagado' : `Poner a ${BONO_SIZE}`}
                 </button>
               </div>
-            )}
+            </div>
           </div>
-          <div className="grid grid-cols-4 gap-3">
-            {RATES.map(rate => (
-              <div key={rate.concept} className="rounded-xl p-3" style={{ background: '#0a1220', border: '1px solid #1a2d45' }}>
-                <p className="text-white text-xs font-bold mb-0.5">{rate.concept}</p>
-                <p className="text-xs mb-2" style={{ color: '#3a5070' }}>{rate.description}</p>
-                {editingRates ? (
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      value={tempRates[rate.concept] ?? ''}
-                      onChange={e => setTempRates(prev => ({ ...prev, [rate.concept]: e.target.value }))}
-                      placeholder="—"
-                      className="w-full rounded-lg px-2 py-1.5 text-white text-sm outline-none"
-                      style={{ background: '#0d1829', border: '1px solid #1a2d45' }}
-                    />
-                    <span className="text-xs font-bold" style={{ color: '#3a5070' }}>€</span>
-                  </div>
-                ) : (
-                  <p className="text-lg font-black" style={{ color: rates[rate.concept] ? '#0057B8' : '#1a2d45' }}>
-                    {rates[rate.concept] ? `${rates[rate.concept]}€` : '* € + IVA'}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
+        </>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        <div className="rounded-2xl p-5" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
-          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#3a5070' }}>Pendiente de cobro</p>
-          <p className="text-4xl font-black" style={{ color: '#f87171' }}>{totalPending.toFixed(2)}€</p>
-          <p className="text-xs mt-1" style={{ color: '#3a5070' }}>{studentsWithDebt} alumnos con deuda</p>
-        </div>
-        <div className="rounded-2xl p-5" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
-          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#3a5070' }}>Cobrado</p>
-          <p className="text-4xl font-black" style={{ color: '#34d399' }}>{totalPaid.toFixed(2)}€</p>
-        </div>
-        <div className="rounded-2xl p-5" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
-          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#3a5070' }}>Total registrado</p>
-          <p className="text-4xl font-black text-white">{(totalPending + totalPaid).toFixed(2)}€</p>
-        </div>
-      </div>
-
-      {/* Formulario */}
-      {showForm && (
-        <div className="rounded-2xl p-6 mb-6 space-y-4" style={{ background: '#0d1829', border: '1px solid #0057B8' }}>
-          <p className="text-white font-bold">Nuevo cobro</p>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#6b8ab0' }}>Alumno</label>
-              <select
-                value={studentId}
-                onChange={e => setStudentId(e.target.value)}
-                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                style={{ background: '#0a1220', border: '1.5px solid #1a2d45', color: studentId ? 'white' : '#3a5070' }}
-              >
-                <option value="">Seleccionar alumno</option>
-                {students.map(s => (
-                  <option key={s.id} value={s.id}>{s.full_name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#6b8ab0' }}>Concepto</label>
-              <select
-                value={concept}
-                onChange={e => selectConcept(e.target.value)}
-                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                style={{ background: '#0a1220', border: '1.5px solid #1a2d45', color: concept ? 'white' : '#3a5070' }}
-              >
-                <option value="">Seleccionar concepto</option>
-                {RATES.map(r => (
-                  <option key={r.concept} value={r.concept}>
-                    {r.concept}{rates[r.concept] ? ` · ${rates[r.concept]}€` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#6b8ab0' }}>
-                Importe (€) <span className="font-normal" style={{ color: '#3a5070' }}>+ IVA no incluido</span>
-              </label>
-              <input
-                type="number"
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-                placeholder="0.00"
-                min={0}
-                step={0.01}
-                className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
-                style={{ background: '#0a1220', border: '1.5px solid #1a2d45' }}
-                onFocus={e => e.target.style.borderColor = '#0057B8'}
-                onBlur={e => e.target.style.borderColor = '#1a2d45'}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#6b8ab0' }}>Fecha límite <span className="font-normal" style={{ color: '#3a5070' }}>(opcional)</span></label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={e => setDueDate(e.target.value)}
-                className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
-                style={{ background: '#0a1220', border: '1.5px solid #1a2d45', colorScheme: 'dark' }}
-                onFocus={e => e.target.style.borderColor = '#0057B8'}
-                onBlur={e => e.target.style.borderColor = '#1a2d45'}
-              />
-            </div>
-
-            <div className="col-span-2">
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#6b8ab0' }}>Notas <span className="font-normal" style={{ color: '#3a5070' }}>(opcional)</span></label>
-              <input
-                type="text"
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                placeholder="Observaciones..."
-                className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
-                style={{ background: '#0a1220', border: '1.5px solid #1a2d45' }}
-                onFocus={e => e.target.style.borderColor = '#0057B8'}
-                onBlur={e => e.target.style.borderColor = '#1a2d45'}
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-3 pt-1">
-            <button
-              onClick={() => setShowForm(false)}
-              className="flex-1 py-2.5 rounded-xl text-sm font-bold transition"
-              style={{ background: '#0a1220', color: '#6b8ab0', border: '1px solid #1a2d45' }}
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={saving || !studentId || !amount || !concept}
-              className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition"
-              style={{ background: saving || !studentId || !amount || !concept ? '#1a2d45' : '#0057B8' }}
-            >
-              {saving ? 'Guardando...' : 'Registrar cobro'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Filtros */}
-      <div className="flex gap-2 mb-6">
-        {(['all', 'pending', 'paid'] as const).map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className="px-4 py-2 rounded-lg text-sm font-semibold transition"
-            style={{
-              background: filter === f ? '#0057B8' : '#0d1829',
-              color: filter === f ? 'white' : '#6b8ab0',
-              border: `1px solid ${filter === f ? '#0057B8' : '#1a2d45'}`,
-            }}
-          >
-            {f === 'all' ? 'Todos' : f === 'pending' ? 'Pendientes' : 'Cobrados'}
-          </button>
-        ))}
-      </div>
-
-      {/* Lista */}
-      {loading ? (
-        <div className="text-sm" style={{ color: '#6b8ab0' }}>Cargando...</div>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-2xl p-16 text-center" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
-          <p className="font-semibold text-white">Sin cobros registrados</p>
-          <p className="text-sm mt-1" style={{ color: '#6b8ab0' }}>Añade el primer cobro para empezar</p>
-        </div>
-      ) : (
-        <div className="rounded-2xl overflow-hidden" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
-          <table className="w-full">
-            <thead>
-              <tr style={{ borderBottom: '1px solid #1a2d45' }}>
-                {['Alumno', 'Concepto', 'Importe', 'Vencimiento', 'Estado', ''].map(h => (
-                  <th key={h} className="text-left px-5 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: '#3a5070' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((payment, idx) => {
-                const isOverdue = payment.status === 'pending' && payment.due_date && payment.due_date < new Date().toISOString().split('T')[0]
-                return (
-                  <tr
-                    key={payment.id}
-                    style={{ borderBottom: idx < filtered.length - 1 ? '1px solid #0f1c2e' : 'none' }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#0f1c2e'}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
-                  >
-                    <td className="px-5 py-4">
-                      <p className="text-white font-bold text-sm">{payment.student?.full_name ?? '—'}</p>
-                      <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>#{payment.student?.order_number}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <p className="text-white text-sm">{payment.concept}</p>
-                      {payment.notes && <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>{payment.notes}</p>}
-                    </td>
-                    <td className="px-5 py-4">
-                      <p className="text-white font-black text-lg">{payment.amount.toFixed(2)}€</p>
-                      <p className="text-xs" style={{ color: '#3a5070' }}>+ IVA</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      {payment.due_date ? (
-                        <p className="text-sm font-semibold" style={{ color: isOverdue ? '#f87171' : '#6b8ab0' }}>
-                          {isOverdue && '⚠ '}{formatDate(payment.due_date)}
-                        </p>
-                      ) : (
-                        <p className="text-sm" style={{ color: '#3a5070' }}>—</p>
-                      )}
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={{
-                        background: payment.status === 'paid' ? 'rgba(52,211,153,0.1)' : 'rgba(239,68,68,0.1)',
-                        color: payment.status === 'paid' ? '#34d399' : '#f87171',
-                      }}>
-                        {payment.status === 'paid' ? `Cobrado ${payment.paid_at ? formatDate(payment.paid_at.split('T')[0]) : ''}` : 'Pendiente'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex gap-2 justify-end">
-                        {payment.status === 'pending' && (
-                          <button
-                            onClick={() => markAsPaid(payment.id)}
-                            className="text-xs px-3 py-1.5 rounded-lg font-semibold transition"
-                            style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399' }}
-                            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(52,211,153,0.2)'}
-                            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'rgba(52,211,153,0.1)'}
-                          >
-                            ✓ Cobrado
-                          </button>
-                        )}
-                        <button
-                          onClick={() => deletePayment(payment.id)}
-                          className="text-xs px-3 py-1.5 rounded-lg font-semibold transition"
-                          style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}
-                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.2)'}
-                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.1)'}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   )
 }

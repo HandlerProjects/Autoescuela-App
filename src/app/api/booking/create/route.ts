@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getBonoStatus, SUSPENDED_MESSAGE } from '@/lib/bono'
 
 export async function POST(req: NextRequest) {
   const {
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
   // Verificar que el token corresponde al studentId y está activo
   const { data: student, error: studentError } = await supabaseAdmin
     .from('students')
-    .select('id, instructor_id, exam_mode, max_concurrent_bookings, max_weekly_bookings')
+    .select('id, instructor_id, exam_mode, max_concurrent_bookings, max_weekly_bookings, practices_paid_through')
     .eq('id', studentId)
     .eq('token', token)
     .eq('is_active', true)
@@ -51,6 +52,13 @@ export async function POST(req: NextRequest) {
 
   if (blockedDay) {
     return NextResponse.json({ error: 'Este día está bloqueado. El profesor no está disponible.' }, { status: 409 })
+  }
+
+  // Comprobar saldo del bono de prácticas. Va antes de los límites de cupo porque es el motivo
+  // que el alumno tiene que resolver primero: de nada sirve decirle que pruebe otro día.
+  const bono = await getBonoStatus(supabaseAdmin, studentId, student.practices_paid_through ?? 0)
+  if (bono.suspended) {
+    return NextResponse.json({ error: SUSPENDED_MESSAGE, suspended: true }, { status: 409 })
   }
 
   // Comprobar límite diario

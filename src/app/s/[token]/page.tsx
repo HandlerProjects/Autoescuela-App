@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { createStudentClient } from '@/lib/supabase/client'
 import { formatDate, formatTime, getDayName, toDateString, getPracticeLabel, generateTimeSlots, getDuration, getBreak } from '@/lib/utils'
+import { BONO_SIZE, buildBonoStatus, countConsuming, SUSPENDED_MESSAGE } from '@/lib/bono'
 import type { Student, Booking, PracticeType, PracticeSubtype, Exam, Instructor } from '@/types'
 
 // Antelación para RESERVAR una práctica (feedback del dueño: bajado de 1 día a 30 min).
@@ -96,6 +97,11 @@ export default function StudentPage() {
   const [selectedWeekDays, setSelectedWeekDays] = useState<Set<string>>(new Set())
 
   const availableDays = getAvailableCalendarDays()
+
+  // Saldo del bono. Se calcula con la misma regla que /api/booking/create (lib/bono.ts) y sobre
+  // allBookings, que ya está cargado — así la pantalla no puede decirle al alumno que le quedan
+  // prácticas y que luego el servidor le rechace la reserva.
+  const bono = buildBonoStatus(countConsuming(allBookings), student?.practices_paid_through ?? 0)
 
   useEffect(() => { loadStudent() }, [token])
 
@@ -936,10 +942,45 @@ export default function StudentPage() {
             </div>
           )}
 
+          {/* ── SALDO AGOTADO ── */}
+          {/* Se corta aquí en vez de dejarle elegir tipo y día para que el servidor le rechace
+              al final: el alumno tiene que enterarse antes de perder tiempo eligiendo hueco. */}
+          {step === 'type' && bono.suspended && (
+            <div className="rounded-2xl p-6 text-center step-enter" style={{ background: '#0d1829', border: '1.5px solid rgba(251,191,36,0.35)' }}>
+              <div
+                className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4"
+                style={{ background: 'rgba(251,191,36,0.12)' }}
+              >
+                <svg className="w-6 h-6" style={{ color: '#fbbf24' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M5.07 19H19a2 2 0 001.75-2.97l-6.93-12a2 2 0 00-3.5 0l-6.93 12A2 2 0 005.07 19z" />
+                </svg>
+              </div>
+              <p className="font-black text-lg mb-2" style={{ color: '#fbbf24' }}>Saldo agotado</p>
+              <p className="text-sm leading-relaxed" style={{ color: '#a0b8d0' }}>
+                {SUSPENDED_MESSAGE}.
+              </p>
+              <p className="text-xs mt-4" style={{ color: '#3a5070' }}>
+                Has usado tus {BONO_SIZE} prácticas. Tus reservas ya hechas se mantienen.
+              </p>
+            </div>
+          )}
+
           {/* ── STEP: type ── */}
-          {step === 'type' && (
+          {step === 'type' && !bono.suspended && (
             <div className="rounded-2xl p-5 space-y-4 step-enter" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
               <p className="text-white font-bold">¿Qué tipo de práctica?</p>
+
+              {/* Aviso solo cuando queda poco: recordárselo siempre sería ruido */}
+              {bono.remaining <= 2 && (
+                <p
+                  className="text-xs font-semibold px-3 py-2 rounded-lg"
+                  style={{ background: 'rgba(251,191,36,0.1)', color: '#fbbf24' }}
+                >
+                  {bono.remaining === 1
+                    ? 'Te queda 1 práctica antes de pasar por la oficina.'
+                    : `Te quedan ${bono.remaining} prácticas antes de pasar por la oficina.`}
+                </p>
+              )}
 
               {/* Opciones de tipo */}
               <div className={`grid gap-3 ${student.practice_types.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
