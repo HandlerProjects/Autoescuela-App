@@ -294,7 +294,13 @@ export default function StudentPage() {
     }).catch(() => {})
 
     setCancellingId(null)
-    await Promise.all([fetchMyBookings(student!.id), ...(student!.instructor_id ? [fetchAvailability(student!.id, student!.instructor_id)] : [])])
+    // allBookings también, porque de él sale el cómputo del tope semanal: si no se refresca,
+    // al cancelar seguiría contando la práctica anulada y el alumno vería "Sem. completa" de más.
+    await Promise.all([
+      fetchMyBookings(student!.id),
+      fetchAllBookings(student!.id),
+      ...(student!.instructor_id ? [fetchAvailability(student!.id, student!.instructor_id)] : []),
+    ])
     setCancelling(false)
   }
 
@@ -821,7 +827,7 @@ export default function StudentPage() {
               </div>
               <p className="text-white font-bold">Pendiente de asignación</p>
               <p className="text-sm mt-2 leading-relaxed" style={{ color: '#6b8ab0' }}>
-                Aún no tienes instructor asignado.<br />Habla con la autoescuela para que te asignen uno.
+                Aún no tienes profesor asignado.<br />Habla con la autoescuela para que te asignen uno.
               </p>
             </div>
           )}
@@ -1016,10 +1022,19 @@ export default function StudentPage() {
                   const blockedDay = blockedDays.find(b => b.date === dateStr)
                   const slots = getSlotsForDay(dateStr, selectedType, selectedSubtype)
                   const available = slots.filter(s => !s.taken).length
+                  // Sin huecos puede significar dos cosas muy distintas para el alumno: que el día
+                  // está lleno, o que simplemente ya ha pasado la última hora de hoy. Antes ambas
+                  // decían "Completo" y parecía un fallo de la app.
+                  const dayOver = available === 0 && slots.every(s => isSlotTooSoon(dateStr, s.time))
                   const isSelected = dateStr === selectedDate
                   const { from: wFrom, to: wTo } = getWeekBounds(dateStr)
-                  const weekCount = myBookings.filter(b => b.practice_date >= wFrom && b.practice_date <= wTo && b.status === 'confirmed').length
-                  const dayCount = myBookings.filter(b => b.practice_date === dateStr && b.status === 'confirmed').length
+                  // Se cuenta sobre allBookings (histórico completo), no sobre myBookings: myBookings
+                  // solo trae de hoy en adelante, así que las prácticas de lunes a ayer no entraban en
+                  // el cómputo y el cliente contaba menos que /api/booking/create, que sí mira la semana
+                  // entera. El alumno veía el día con huecos, elegía hora y el servidor le rechazaba al
+                  // confirmar con "Has alcanzado el límite de N prácticas esta semana".
+                  const weekCount = allBookings.filter(b => b.practice_date >= wFrom && b.practice_date <= wTo && b.status === 'confirmed').length
+                  const dayCount = allBookings.filter(b => b.practice_date === dateStr && b.status === 'confirmed').length
                   const maxWeekly = student?.max_weekly_bookings ?? 5
                   const maxDaily = student?.exam_mode ? 2 : 1
                   const weekFull = weekCount >= maxWeekly
@@ -1074,7 +1089,7 @@ export default function StudentPage() {
                           color: weekFull ? '#fbbf24' : dayFull ? '#fbbf24' : available === 0 ? '#3a5070' : '#0057B8',
                         }}
                       >
-                        {weekFull ? 'Sem. completa' : dayFull ? 'Ya reservado' : available === 0 ? 'Completo' : `${available} huecos`}
+                        {weekFull ? 'Sem. completa' : dayFull ? 'Ya reservado' : dayOver ? 'Ya no quedan horas' : available === 0 ? 'Completo' : `${available} huecos`}
                       </span>
                     </button>
                   )
