@@ -1,22 +1,17 @@
 -- Horarios especiales por día.
 --
--- El horario del profesor (tabla `instructors`) es fijo: mañana, tarde y un único descanso igual
--- para todo el día. Eso cubre la rutina, pero no la realidad del día a día de la autoescuela:
+-- El horario de `instructors` es fijo: mañana, tarde y un único descanso para toda la jornada.
+-- Sirve para la rutina, pero no admite las variaciones de un día concreto (ampliar o recortar la
+-- jornada, acortar los descansos en temporada alta, o concentrar el descanso en un momento dado).
 --
---   · "Mañana tengo un asunto familiar, entro a las 8 y salgo a las 20 para compensar."
---   · "Son las fiestas de Palencia, hay saturación: el descanso de 15 min lo hacemos de 5."
---   · "Hoy encadeno 7:30–9:00 sin parar y a las 9 me tomo media hora de café."
+-- Se modela como capa de excepciones sobre el horario base, no como sustitución:
+--   hay fila para ese profesor y esa fecha → rige la fila.
+--   no la hay                             → rige el horario de `instructors`, sin cambio alguno.
 --
--- Se resuelve con una CAPA DE EXCEPCIONES, no cambiando el horario base:
---   ¿hay fila para ese profesor y ese día? → manda ella.
---   ¿no la hay?                           → el horario de siempre, exactamente como hasta ahora.
---
--- Mientras nadie cree una excepción el comportamiento es idéntico al actual, que es justo lo que
--- se pedía: no romper algo que funciona para poder cambiarlo un día suelto.
---
--- `sessions` es una LISTA de franjas, no mañana/tarde, porque el generador de huecos
--- (lib/utils.ts → generateTimeSlots) ya admite cualquier número de tramos. El tercer ejemplo sale
--- solo de ahí: el descanso largo no se configura, es el hueco entre una franja y la siguiente.
+-- `sessions` es una lista de franjas en vez de mañana/tarde porque el generador de huecos
+-- (lib/utils.ts → generateTimeSlots) ya admite cualquier número de tramos. De ahí sale también el
+-- descanso largo: no se configura, es el intervalo entre el fin de una franja y el inicio de la
+-- siguiente. `break_minutes` es el descanso corto entre prácticas DENTRO de cada franja.
 
 create table if not exists public.schedule_overrides (
   id uuid primary key default gen_random_uuid(),

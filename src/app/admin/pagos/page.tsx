@@ -171,9 +171,14 @@ export default function PagosPage() {
           </div>
 
           {/* ── RESTO DE ALUMNOS ── */}
+          {/* Solo informativo: aquí no hay botones. Las acciones viven arriba, cuando toca cobrar,
+              para que nadie pulse "Pagado" o "Resetear" sin querer sobre quien no debe nada. */}
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: '#3a5070' }}>
+            <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: '#3a5070' }}>
               Al corriente
+            </p>
+            <p className="text-xs mb-3" style={{ color: '#1a2d45' }}>
+              Aparecen arriba automáticamente cuando agotan sus {BONO_SIZE} prácticas
             </p>
             {active.length === 0 ? (
               <div className="rounded-2xl p-10 text-center" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
@@ -181,53 +186,49 @@ export default function PagosPage() {
               </div>
             ) : (
               <div className="rounded-2xl overflow-hidden" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
-                {active.map((row, idx) => (
-                  <div
-                    key={row.id}
-                    className="px-4 py-3 flex items-center gap-3"
-                    style={{ borderTop: idx === 0 ? 'none' : '1px solid #0f1c2e' }}
-                  >
-                    <p className="text-xs font-black font-mono w-8 flex-shrink-0" style={{ color: '#3a5070' }}>
-                      #{row.orderNumber}
-                    </p>
-                    <p className="text-white text-sm font-semibold flex-1 min-w-[110px]">{row.fullName}</p>
-                    <span
-                      className="text-xs px-2.5 py-1 rounded-full font-bold flex-shrink-0"
-                      style={{
-                        background: row.remaining === 1 ? 'rgba(251,191,36,0.12)' : 'rgba(52,211,153,0.1)',
-                        color: row.remaining === 1 ? '#fbbf24' : '#34d399',
-                      }}
+                {active.map((row, idx) => {
+                  // Un punto por práctica del bono: llenos las que le quedan, vacíos las gastadas.
+                  // Se ve de un vistazo quién está a punto de tener que pasar por la oficina.
+                  const puntos = Math.min(row.remaining, BONO_SIZE)
+                  const ultima = row.remaining === 1
+                  const color = ultima ? '#fbbf24' : '#34d399'
+
+                  return (
+                    <div
+                      key={row.id}
+                      className="px-4 py-3 flex items-center gap-3"
+                      style={{ borderTop: idx === 0 ? 'none' : '1px solid #0f1c2e' }}
                     >
-                      {row.remaining} {row.remaining === 1 ? 'práctica' : 'prácticas'}
-                    </span>
-                    {/* Se puede cobrar el siguiente bono aunque aún le quede saldo: no hay que
-                        esperar a que se quede a cero para que pase por la oficina. */}
-                    <button
-                      onClick={() => { setConfirming({ row, mode: 'pago' }); setError('') }}
-                      className="text-xs font-bold px-3 py-1.5 rounded-lg transition flex-shrink-0 text-white"
-                      style={{ background: '#0057B8' }}
-                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
-                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0057B8'}
-                    >
-                      Pagado
-                    </button>
-                    <button
-                      onClick={() => { setConfirming({ row, mode: 'reset' }); setError('') }}
-                      className="text-xs font-semibold px-2.5 py-1.5 rounded-lg transition flex-shrink-0"
-                      style={{ color: '#3a5070', border: '1px solid #1a2d45' }}
-                      onMouseEnter={e => {
-                        (e.currentTarget as HTMLElement).style.color = 'white'
-                        ;(e.currentTarget as HTMLElement).style.borderColor = '#0057B8'
-                      }}
-                      onMouseLeave={e => {
-                        (e.currentTarget as HTMLElement).style.color = '#3a5070'
-                        ;(e.currentTarget as HTMLElement).style.borderColor = '#1a2d45'
-                      }}
-                    >
-                      Resetear
-                    </button>
-                  </div>
-                ))}
+                      <p className="text-xs font-black font-mono w-8 flex-shrink-0" style={{ color: '#3a5070' }}>
+                        #{row.orderNumber}
+                      </p>
+                      <p className="text-white text-sm font-semibold flex-1 min-w-[110px]">{row.fullName}</p>
+
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {Array.from({ length: BONO_SIZE }).map((_, i) => (
+                          <div
+                            key={i}
+                            className="rounded-full"
+                            style={{
+                              width: '7px',
+                              height: '7px',
+                              background: i < puntos ? color : '#1a2d45',
+                            }}
+                          />
+                        ))}
+                      </div>
+
+                      <span
+                        className="text-xs font-bold flex-shrink-0 text-right"
+                        style={{ color, minWidth: '96px' }}
+                      >
+                        {ultima
+                          ? 'Le queda 1'
+                          : `Le quedan ${row.remaining}`}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
