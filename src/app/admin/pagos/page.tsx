@@ -23,9 +23,10 @@ export default function PagosPage() {
   const [rows, setRows] = useState<BonoRow[]>([])
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
-  // Mismo diálogo para las dos acciones: ambas dejan al alumno con BONO_SIZE prácticas limpias.
-  // 'pago'  → la secretaría cobra el siguiente bono en el mostrador.
-  // 'reset' → alumno que entra con prácticas ya hechas por su cuenta y hay que ponerle el contador a cero.
+  // Dos acciones distintas, disponibles para cualquier alumno — no hace falta que haya agotado
+  // el bono para cobrarle el siguiente:
+  // 'pago'  → SUMA otras BONO_SIZE prácticas a lo que ya tuviera.
+  // 'reset' → FIJA el contador en BONO_SIZE, para quien entra con prácticas ya hechas por su cuenta.
   const [confirming, setConfirming] = useState<{ row: BonoRow; mode: 'pago' | 'reset' } | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -55,7 +56,7 @@ export default function PagosPage() {
     const res = await fetch('/api/bono/confirmar-pago', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentId: confirming.row.id }),
+      body: JSON.stringify({ studentId: confirming.row.id, mode: confirming.mode }),
     })
 
     if (res.ok) {
@@ -148,6 +149,21 @@ export default function PagosPage() {
                     >
                       Pagado
                     </button>
+                    <button
+                      onClick={() => { setConfirming({ row, mode: 'reset' }); setError('') }}
+                      className="px-3 py-2.5 rounded-xl text-xs font-semibold transition"
+                      style={{ color: '#3a5070', border: '1px solid #1a2d45' }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLElement).style.color = 'white'
+                        ;(e.currentTarget as HTMLElement).style.borderColor = '#0057B8'
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLElement).style.color = '#3a5070'
+                        ;(e.currentTarget as HTMLElement).style.borderColor = '#1a2d45'
+                      }}
+                    >
+                      Resetear
+                    </button>
                   </div>
                 ))}
               </div>
@@ -174,7 +190,7 @@ export default function PagosPage() {
                     <p className="text-xs font-black font-mono w-8 flex-shrink-0" style={{ color: '#3a5070' }}>
                       #{row.orderNumber}
                     </p>
-                    <p className="text-white text-sm font-semibold flex-1">{row.fullName}</p>
+                    <p className="text-white text-sm font-semibold flex-1 min-w-[110px]">{row.fullName}</p>
                     <span
                       className="text-xs px-2.5 py-1 rounded-full font-bold flex-shrink-0"
                       style={{
@@ -184,9 +200,20 @@ export default function PagosPage() {
                     >
                       {row.remaining} {row.remaining === 1 ? 'práctica' : 'prácticas'}
                     </span>
+                    {/* Se puede cobrar el siguiente bono aunque aún le quede saldo: no hay que
+                        esperar a que se quede a cero para que pase por la oficina. */}
+                    <button
+                      onClick={() => { setConfirming({ row, mode: 'pago' }); setError('') }}
+                      className="text-xs font-bold px-3 py-1.5 rounded-lg transition flex-shrink-0 text-white"
+                      style={{ background: '#0057B8' }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0057B8'}
+                    >
+                      Pagado
+                    </button>
                     <button
                       onClick={() => { setConfirming({ row, mode: 'reset' }); setError('') }}
-                      className="text-xs font-semibold px-2.5 py-1 rounded-lg transition flex-shrink-0"
+                      className="text-xs font-semibold px-2.5 py-1.5 rounded-lg transition flex-shrink-0"
                       style={{ color: '#3a5070', border: '1px solid #1a2d45' }}
                       onMouseEnter={e => {
                         (e.currentTarget as HTMLElement).style.color = 'white'
@@ -223,11 +250,11 @@ export default function PagosPage() {
               <p className="text-white font-black text-lg mb-2">
                 {confirming.mode === 'pago' ? 'Confirmar pago' : 'Resetear prácticas'}
               </p>
-              <p className="text-sm leading-relaxed mb-5" style={{ color: '#a0b8d0' }}>
+              <p className="text-sm leading-relaxed mb-4" style={{ color: '#a0b8d0' }}>
                 {confirming.mode === 'pago' ? (
                   <>
                     ¿Confirmas que <span className="font-bold text-white">{confirming.row.fullName}</span> ha
-                    pagado su bono de {BONO_SIZE} prácticas?
+                    pagado un bono de {BONO_SIZE} prácticas?
                   </>
                 ) : (
                   <>
@@ -236,10 +263,23 @@ export default function PagosPage() {
                   </>
                 )}
               </p>
+
+              {/* Se dice el número exacto con el que va a quedar: es la diferencia entre las dos
+                  acciones y el sitio donde una equivocación se paga cara. */}
+              <div className="rounded-xl px-3 py-2.5 mb-5" style={{ background: '#0a1220', border: '1px solid #1a2d45' }}>
+                <p className="text-xs" style={{ color: '#6b8ab0' }}>
+                  Ahora tiene <span className="font-bold text-white">{confirming.row.remaining}</span>
+                  {confirming.row.remaining === 1 ? ' práctica' : ' prácticas'} · pasará a tener{' '}
+                  <span className="font-bold" style={{ color: '#34d399' }}>
+                    {confirming.mode === 'pago' ? confirming.row.remaining + BONO_SIZE : BONO_SIZE}
+                  </span>
+                </p>
+              </div>
+
               <p className="text-xs mb-5" style={{ color: '#3a5070' }}>
                 {confirming.mode === 'pago'
-                  ? `Volverá a poder reservar durante las próximas ${BONO_SIZE} prácticas.`
-                  : `Se usa cuando un alumno empieza con prácticas ya hechas por su cuenta. Su contador vuelve a ${BONO_SIZE}, sin borrar ninguna reserva.`}
+                  ? `Se le suman ${BONO_SIZE} a las que ya tuviera. No hace falta que las haya agotado.`
+                  : `Se usa cuando un alumno empieza con prácticas ya hechas por su cuenta. Su contador queda en ${BONO_SIZE}, sin borrar ninguna reserva.`}
               </p>
 
               {error && (

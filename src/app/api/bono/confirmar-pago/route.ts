@@ -10,8 +10,11 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   if (!isAdminOrSecretary(user)) return NextResponse.json({ error: 'Prohibido' }, { status: 403 })
 
-  const { studentId } = await req.json()
+  const { studentId, mode } = await req.json()
   if (!studentId) return NextResponse.json({ error: 'studentId obligatorio' }, { status: 400 })
+  if (mode !== 'pago' && mode !== 'reset') {
+    return NextResponse.json({ error: 'mode debe ser "pago" o "reset"' }, { status: 400 })
+  }
 
   const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,11 +32,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Alumno no encontrado' }, { status: 404 })
   }
 
-  // El tope se calcula sobre las prácticas realmente gastadas, no sumando a ciegas: si el alumno
-  // llega al mostrador con saldo de sobra (o si se pulsa dos veces por error), no se le regalan
-  // bonos acumulados. Siempre acaba con exactamente BONO_SIZE prácticas por delante.
   const before = await getBonoStatus(supabaseAdmin, studentId, student.practices_paid_through ?? 0)
-  const newPaidThrough = before.used + BONO_SIZE
+
+  // Las dos acciones son distintas a propósito y no deben confundirse:
+  //
+  // 'pago'  → SUMA un bono. El alumno no tiene por qué haber agotado el anterior: si viene a
+  //           pagar cuando le quedaban 3, acaba con 8, no con 5. Recalcular aquí le robaría
+  //           las prácticas que ya tenía pagadas.
+  // 'reset' → FIJA el contador en BONO_SIZE por delante, descartando lo anterior. Es para el
+  //           alumno que entra en la autoescuela con prácticas ya hechas por su cuenta, o para
+  //           corregir un contador que se haya quedado mal.
+  const newPaidThrough = mode === 'pago'
+    ? (student.practices_paid_through ?? 0) + BONO_SIZE
+    : before.used + BONO_SIZE
 
   const { error: updateError } = await supabaseAdmin
     .from('students')
@@ -45,7 +56,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     studentName: student.full_name,
-    remaining: BONO_SIZE,
+    remaining: Math.max(0, newPaidThrough - before.used),
     paidThrough: newPaidThrough,
   })
 }
