@@ -101,6 +101,47 @@ export function ctaButton(url: string, label: string, color = '#0057B8'): string
   </table>`
 }
 
+// ── Práctica cancelada por el centro ──────────────────────────────────────────
+// Compartido por la cancelación de una franja y por el recorte de horario de un día: en ambos
+// casos el alumno pierde su clase sin haber hecho nada, y el mensaje debe ser el mismo.
+export function buildPracticeCancelledEmail(
+  studentName: string,
+  date: string,
+  time: string,
+  practiceLabel: string,
+  reason: string | null,
+  token: string
+): string {
+  const bookingUrl = `${APP_URL}/s/${token}`
+  const firstName = studentName.split(' ')[0]
+
+  const rows =
+    infoRow('Día cancelado', `${getDayNameEs(date)}, ${formatDateEs(date)}`, '#fca5a5') +
+    infoRow('Hora', time, '#fca5a5') +
+    infoRow('Tipo de práctica', practiceLabel, '#fca5a5', true)
+
+  const reasonBlock = reason
+    ? `<p style="margin:0 0 24px;color:#4a6080;font-size:14px;line-height:1.6"><strong>Motivo:</strong> <em>${reason}</em></p>`
+    : ''
+
+  const content = `
+    <p style="margin:0 0 6px;color:#dc2626;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Práctica cancelada</p>
+    <h1 style="margin:0 0 16px;color:#0a0f1a;font-size:23px;font-weight:900">Hola, ${firstName}</h1>
+    <p style="margin:0 0 20px;color:#4a6080;font-size:15px;line-height:1.7">
+      Tu práctica del <strong>${getDayNameEs(date)} ${formatDateEs(date)}</strong> a las <strong>${time}</strong> ha sido cancelada por el profesor.
+      Lamentamos los inconvenientes.
+    </p>
+    ${reasonBlock}
+    ${infoCard(rows, '#fef2f2', '#fca5a5')}
+    <p style="margin:0 0 20px;color:#4a6080;font-size:14px;line-height:1.6">
+      No se te descuenta ninguna práctica. Puedes reservar otro hueco disponible desde tu panel:
+    </p>
+    ${ctaButton(bookingUrl, 'Ver huecos disponibles →')}
+  `
+
+  return emailWrapper(content, { url: bookingUrl, label: 'Ver mis reservas' }, '#dc2626')
+}
+
 // ── Credenciales de personal (login por email+contraseña vía Supabase Auth) ────
 
 export type StaffRole = 'admin' | 'instructor' | 'secretary'

@@ -40,26 +40,44 @@ export async function GET(req: NextRequest) {
     .gte('date', from)
     .lte('date', to)
 
+  // Días con horario especial, para que el calendario genere los huecos de ese día con el
+  // horario que realmente rige y no con el habitual del profesor.
+  let overridesQuery = supabaseAdmin
+    .from('schedule_overrides')
+    .select('date, sessions, break_minutes, reason')
+    .gte('date', from)
+    .lte('date', to)
+
   // Un instructor solo ve su propio calendario, nunca el de otros instructores
   // (comprobación de seguridad: se ignora cualquier instructorId que llegue por query string)
   if (user.role === 'instructor') {
     bookingsQuery = bookingsQuery.eq('instructor_id', user.id)
     blockedDaysQuery = blockedDaysQuery.eq('instructor_id', user.id)
     blockedSlotsQuery = blockedSlotsQuery.eq('instructor_id', user.id)
+    overridesQuery = overridesQuery.eq('instructor_id', user.id)
   } else if (user.role === 'admin' && instructorId) {
     // El admin ve el calendario de un instructor concreto cuando lo selecciona;
     // sin instructorId se mantiene el comportamiento previo (todos mezclados).
     bookingsQuery = bookingsQuery.eq('instructor_id', instructorId)
     blockedDaysQuery = blockedDaysQuery.eq('instructor_id', instructorId)
     blockedSlotsQuery = blockedSlotsQuery.eq('instructor_id', instructorId)
+    overridesQuery = overridesQuery.eq('instructor_id', instructorId)
   }
 
-  const [{ data: bookingsData, error: bookingsError }, { data: blockedData, error: blockedError }, { data: slotsData, error: slotsError }] =
-    await Promise.all([bookingsQuery, blockedDaysQuery, blockedSlotsQuery])
+  const [{ data: bookingsData, error: bookingsError }, { data: blockedData, error: blockedError }, { data: slotsData, error: slotsError }, { data: overridesData, error: overridesError }] =
+    await Promise.all([bookingsQuery, blockedDaysQuery, blockedSlotsQuery, overridesQuery])
 
   if (bookingsError) return NextResponse.json({ error: bookingsError.message }, { status: 500 })
   if (blockedError) return NextResponse.json({ error: blockedError.message }, { status: 500 })
   if (slotsError) return NextResponse.json({ error: slotsError.message }, { status: 500 })
+  // Igual que en /api/booking/availability: sin horarios especiales el calendario sigue siendo
+  // útil con el horario habitual; devolver 500 lo dejaría en blanco.
+  if (overridesError) console.error('calendario: no se pudieron leer los horarios especiales:', overridesError.message)
 
-  return NextResponse.json({ bookings: bookingsData, blockedDays: blockedData, blockedSlots: slotsData })
+  return NextResponse.json({
+    bookings: bookingsData,
+    blockedDays: blockedData,
+    blockedSlots: slotsData,
+    scheduleOverrides: overridesData ?? [],
+  })
 }

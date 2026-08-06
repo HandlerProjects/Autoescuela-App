@@ -58,6 +58,40 @@ export function getInstructorSessions(instructor: Instructor | null | undefined)
   return sessions.length > 0 ? sessions : [DEFAULT_SESSIONS[0]]
 }
 
+/** Horario excepcional de un profesor para un día concreto. */
+export interface ScheduleOverride {
+  date: string
+  sessions: Session[]
+  break_minutes: number | null
+  reason?: string | null
+}
+
+/**
+ * Franjas que rigen un día concreto: las del horario especial si lo hay, y si no las de siempre.
+ *
+ * Todo el cálculo de huecos pasa por aquí, así que un horario especial se refleja a la vez en la
+ * pantalla del alumno, en el calendario del profesor, en el del admin y en la validación del
+ * servidor. No hay que acordarse de actualizar cada sitio — que es como se desincronizan.
+ */
+export function getSessionsForDay(
+  instructor: Instructor | null | undefined,
+  override: ScheduleOverride | null | undefined
+): Session[] {
+  if (override && override.sessions.length > 0) return override.sessions
+  return getInstructorSessions(instructor)
+}
+
+/** Descanso que rige un día: el del horario especial si lo define, y si no el del profesor. */
+export function getBreakForDay(
+  instructor: Instructor | null | undefined,
+  override: ScheduleOverride | null | undefined
+): number {
+  if (override && override.break_minutes !== null && override.break_minutes !== undefined) {
+    return override.break_minutes
+  }
+  return instructor?.break_minutes ?? 10
+}
+
 /**
  * Descanso que sigue a una práctica.
  * Camión + circulación son siempre 30 min por normativa; el resto usa el del profesor.

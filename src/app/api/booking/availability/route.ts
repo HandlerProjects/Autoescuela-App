@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Alumno no encontrado o inactivo' }, { status: 403 })
   }
 
-  const [{ data: bookings, error: bookingsError }, { data: blockedSlotsData, error: blockedSlotsError }, { data: blockedDaysData, error: blockedDaysError }] = await Promise.all([
+  const [{ data: bookings, error: bookingsError }, { data: blockedSlotsData, error: blockedSlotsError }, { data: blockedDaysData, error: blockedDaysError }, { data: overridesData, error: overridesError }] = await Promise.all([
     supabaseAdmin
       .from('bookings')
       .select('practice_date, start_time, practice_type, practice_subtype')
@@ -51,11 +51,22 @@ export async function POST(req: NextRequest) {
       .eq('instructor_id', instructorId)
       .gte('date', from)
       .lte('date', to),
+    // Días con horario especial: el alumno tiene que ver las horas reales de ese día, no las del
+    // horario habitual del profesor.
+    supabaseAdmin
+      .from('schedule_overrides')
+      .select('date, sessions, break_minutes')
+      .eq('instructor_id', instructorId)
+      .gte('date', from)
+      .lte('date', to),
   ])
 
   if (bookingsError) return NextResponse.json({ error: bookingsError.message }, { status: 500 })
   if (blockedSlotsError) return NextResponse.json({ error: blockedSlotsError.message }, { status: 500 })
   if (blockedDaysError) return NextResponse.json({ error: blockedDaysError.message }, { status: 500 })
+  // Los horarios especiales son un extra: si no se pueden leer se sigue con el horario habitual.
+  // Tumbar la reserva entera por esto sería mucho peor que enseñar las horas de siempre.
+  if (overridesError) console.error('availability: no se pudieron leer los horarios especiales:', overridesError.message)
 
   return NextResponse.json({
     takenSlots: (bookings ?? []).map(b => ({
@@ -70,5 +81,10 @@ export async function POST(req: NextRequest) {
       end: b.end_time.substring(0, 5),
     })),
     blockedDays: (blockedDaysData ?? []).map(b => ({ date: b.date, reason: b.reason })),
+    scheduleOverrides: (overridesData ?? []).map(o => ({
+      date: o.date,
+      sessions: o.sessions,
+      break_minutes: o.break_minutes,
+    })),
   })
 }

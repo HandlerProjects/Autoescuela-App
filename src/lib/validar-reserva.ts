@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateTimeSlots, getDuration } from '@/lib/utils'
-import { getInstructorSessions, getSlotBreakMinutes, isSlotOccupied, toTimeString, toMinutes } from '@/lib/horarios'
+import { getSessionsForDay, getBreakForDay, getSlotBreakMinutes, isSlotOccupied, toTimeString, toMinutes } from '@/lib/horarios'
 import type { PracticeType, PracticeSubtype } from '@/types'
 
 // Validación de un hueco contra el estado real de la agenda, en servidor.
@@ -38,7 +38,7 @@ export async function validateSlot(
 ): Promise<SlotValidation> {
   const { instructorId, date, startTime, practiceType, practiceSubtype, ignoreBookingId } = req
 
-  const [{ data: instructor }, { data: blockedDay }, { data: blockedSlots }, { data: bookings }] =
+  const [{ data: instructor }, { data: blockedDay }, { data: blockedSlots }, { data: bookings }, { data: override }] =
     await Promise.all([
       supabaseAdmin
         .from('instructors')
@@ -63,6 +63,14 @@ export async function validateSlot(
         .eq('instructor_id', instructorId)
         .eq('practice_date', date)
         .neq('status', 'cancelled'),
+      // Horario especial de ese día, si lo hay: manda sobre el horario habitual.
+      supabaseAdmin
+        .from('schedule_overrides')
+        .select('date, sessions, break_minutes')
+        .eq('instructor_id', instructorId)
+        .eq('date', date)
+        .limit(1)
+        .maybeSingle(),
     ])
 
   if (!instructor) {
@@ -79,10 +87,11 @@ export async function validateSlot(
     return { ok: false, error: 'Este profesor no imparte ese tipo de práctica.', status: 409 }
   }
 
-  // La hora tiene que ser una de las de su rejilla: mismas franjas y mismo descanso que ve el
-  // alumno en pantalla. Así el servidor y la pantalla no pueden discrepar sobre qué horas existen.
-  const breakMins = instructor.break_minutes ?? 10
-  const sessions = getInstructorSessions(instructor as never)
+  // La hora tiene que ser una de las de su rejilla de ESE día: si hay horario especial manda él,
+  // y si no el habitual. Mismas franjas y mismo descanso que ve el alumno en pantalla, así el
+  // servidor y la pantalla no pueden discrepar sobre qué horas existen.
+  const breakMins = getBreakForDay(instructor as never, override as never)
+  const sessions = getSessionsForDay(instructor as never, override as never)
   const validStarts = generateTimeSlots(practiceType, practiceSubtype, sessions, breakMins)
 
   if (!validStarts.includes(startTime.substring(0, 5))) {

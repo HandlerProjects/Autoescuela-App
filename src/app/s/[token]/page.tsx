@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { createStudentClient } from '@/lib/supabase/client'
 import { formatDate, formatTime, getDayName, toDateString, getPracticeLabel, generateTimeSlots, getDuration, getBreak } from '@/lib/utils'
-import { getInstructorSessions, isSlotOccupied } from '@/lib/horarios'
+import { getSessionsForDay, getBreakForDay, isSlotOccupied, type ScheduleOverride } from '@/lib/horarios'
 import { BONO_SIZE, buildBonoStatus, countConsuming, SUSPENDED_MESSAGE } from '@/lib/bono'
 import type { Student, Booking, PracticeType, PracticeSubtype, Exam, Instructor } from '@/types'
 
@@ -74,6 +74,8 @@ export default function StudentPage() {
   const [takenSlots, setTakenSlots] = useState<{ date: string; start: string; type: PracticeType; subtype: PracticeSubtype | null }[]>([])
   const [blockedSlots, setBlockedSlots] = useState<{ date: string; start: string; end: string }[]>([])
   const [blockedDays, setBlockedDays] = useState<{ date: string; reason: string | null }[]>([])
+  // Días en los que el profesor trabaja con un horario distinto al suyo habitual.
+  const [scheduleOverrides, setScheduleOverrides] = useState<ScheduleOverride[]>([])
 
   const [allBookings, setAllBookings] = useState<Booking[]>([])
   const [exams, setExams] = useState<Exam[]>([])
@@ -183,6 +185,11 @@ export default function StudentPage() {
     setTakenSlots(data.takenSlots ?? [])
     setBlockedSlots(data.blockedSlots ?? [])
     setBlockedDays(data.blockedDays ?? [])
+    setScheduleOverrides(data.scheduleOverrides ?? [])
+  }
+
+  function overrideFor(date: string): ScheduleOverride | null {
+    return scheduleOverrides.find(o => o.date === date) ?? null
   }
 
   function isSlotBlocked(date: string, slotStart: string, slotType: PracticeType, slotSubtype: PracticeSubtype | null): boolean {
@@ -190,7 +197,7 @@ export default function StudentPage() {
       slotStart,
       slotType,
       slotSubtype,
-      instructor?.break_minutes,
+      getBreakForDay(instructor, overrideFor(date)),
       takenSlots
         .filter(t => t.date === date)
         .map(t => ({ start_time: t.start, practice_type: t.type, practice_subtype: t.subtype })),
@@ -201,8 +208,10 @@ export default function StudentPage() {
   }
 
   function getSlotsForDay(date: string, type: PracticeType, subtype: PracticeSubtype | null) {
-    const breakMins = instructor?.break_minutes ?? 10
-    return generateTimeSlots(type, subtype, getInstructorSessions(instructor), breakMins).map(slot => ({
+    // Cada día puede tener su propio horario: el especial si el profesor lo cambió, el habitual si no.
+    const override = overrideFor(date)
+    const breakMins = getBreakForDay(instructor, override)
+    return generateTimeSlots(type, subtype, getSessionsForDay(instructor, override), breakMins).map(slot => ({
       time: slot,
       taken: isSlotBlocked(date, slot, type, subtype) || isSlotTooSoon(date, slot) || isSlotBeyondWindow(date, slot),
     }))
@@ -412,7 +421,7 @@ export default function StudentPage() {
         selectedSlot,
         selectedType,
         selectedSubtype,
-        instructor?.break_minutes,
+        getBreakForDay(instructor, overrideFor(dateStr)),
         freshTaken
           .filter(t => t.date === dateStr)
           .map(t => ({ start_time: t.start, practice_type: t.type, practice_subtype: t.subtype })),

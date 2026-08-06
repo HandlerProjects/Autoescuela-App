@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { toDateString, getDayName, formatDate, getPracticeLabel, generateTimeSlots } from '@/lib/utils'
-import { getInstructorSessions, isSlotOccupied } from '@/lib/horarios'
+import { getSessionsForDay, getBreakForDay, isSlotOccupied, type ScheduleOverride } from '@/lib/horarios'
 import type { Booking, BlockedSlot, PracticeType, PracticeSubtype, Instructor } from '@/types'
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -55,6 +55,7 @@ export default function CalendarioPage() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [blockedDays, setBlockedDays] = useState<string[]>([])
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([])
+  const [scheduleOverrides, setScheduleOverrides] = useState<ScheduleOverride[]>([])
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [filter, setFilter] = useState<'all' | 'car' | 'truck' | 'moto'>('all')
@@ -139,6 +140,7 @@ export default function CalendarioPage() {
       setBookings(data.bookings ?? [])
       setBlockedDays((data.blockedDays ?? []).map((b: { date: string }) => b.date))
       setBlockedSlots(data.blockedSlots ?? [])
+      setScheduleOverrides(data.scheduleOverrides ?? [])
     }
     setLoading(false)
   }
@@ -159,11 +161,16 @@ export default function CalendarioPage() {
   // Profesor cuyo calendario se está mirando: el elegido si es admin, o uno mismo si es profesor.
   const viewedInstructor = instructors.find(i => i.id === selectedInstructorId) ?? null
 
+  function overrideFor(dateStr: string): ScheduleOverride | null {
+    return scheduleOverrides.find(o => o.date === dateStr) ?? null
+  }
+
   function getFreeSlots(dateStr: string) {
-    // Las horas salen del horario REAL del profesor, no del genérico 08:00–13:30 / 16:00–19:15:
-    // un profesor de media jornada mostraba huecos de tarde que no existían.
-    const sessions = getInstructorSessions(viewedInstructor)
-    const breakMins = viewedInstructor?.break_minutes ?? 10
+    // Las horas salen del horario REAL del profesor para ESE día: el especial si lo cambió, y si
+    // no el habitual. Antes se usaba el genérico 08:00–13:30 / 16:00–19:15 para todos.
+    const override = overrideFor(dateStr)
+    const sessions = getSessionsForDay(viewedInstructor, override)
+    const breakMins = getBreakForDay(viewedInstructor, override)
 
     // Solo las reservas vivas ocupan: una cancelada libera su hueco.
     const dayBookings = bookings

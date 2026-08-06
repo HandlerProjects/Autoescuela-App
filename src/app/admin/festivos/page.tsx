@@ -3,7 +3,16 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, getDayName, toDateString } from '@/lib/utils'
+import { getInstructorSessions, type ScheduleOverride, type Session } from '@/lib/horarios'
 import type { BlockedDay, BlockedSlot, Instructor } from '@/types'
+
+interface AffectedBooking {
+  id: string
+  time: string
+  endTime: string
+  studentName: string
+  practiceLabel: string
+}
 
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -40,6 +49,17 @@ export default function FestivosPage() {
   const [blockEnd, setBlockEnd] = useState('')
   const [blockReason, setBlockReason] = useState('')
   const [savingSlot, setSavingSlot] = useState(false)
+
+  // Horario especial de un día suelto: franjas propias y descanso propio, solo para esa fecha.
+  const [overrides, setOverrides] = useState<ScheduleOverride[]>([])
+  const [editingSchedule, setEditingSchedule] = useState(false)
+  const [formSessions, setFormSessions] = useState<Session[]>([])
+  const [formBreak, setFormBreak] = useState<number | null>(null)
+  const [formReason, setFormReason] = useState('')
+  const [savingSchedule, setSavingSchedule] = useState(false)
+  const [scheduleError, setScheduleError] = useState('')
+  // Clases que quedarían fuera del nuevo horario, pendientes de que el profesor las confirme.
+  const [affected, setAffected] = useState<AffectedBooking[] | null>(null)
 
   useEffect(() => { initUser() }, [])
   useEffect(() => { if (selectedInstructorId) fetchData() }, [currentMonth, currentYear, selectedInstructorId])
@@ -89,7 +109,86 @@ export default function FestivosPage() {
 
     if (daysData) setBlockedDays(daysData)
     if (slotsData) setBlockedSlots(slotsData)
+
+    const res = await fetch(`/api/horarios/list?from=${from}&to=${to}&instructorId=${selectedInstructorId}`)
+    if (res.ok) {
+      const { overrides: data } = await res.json()
+      setOverrides(data ?? [])
+    }
+
     setLoading(false)
+  }
+
+  function overrideFor(dateStr: string): ScheduleOverride | null {
+    return overrides.find(o => o.date === dateStr) ?? null
+  }
+
+  /** Abre el editor partiendo del horario que rige hoy ese día, para retocarlo en vez de escribirlo de cero. */
+  function startEditingSchedule(dateStr: string) {
+    const existing = overrideFor(dateStr)
+    setFormSessions(existing?.sessions ?? getInstructorSessions(selectedInstructor))
+    setFormBreak(existing?.break_minutes ?? null)
+    setFormReason(existing?.reason ?? '')
+    setScheduleError('')
+    setAffected(null)
+    setEditingSchedule(true)
+  }
+
+  /**
+   * Primera llamada sin confirmar: solo pregunta qué clases quedarían fuera. Si hay alguna, se
+   * enseñan y se espera confirmación. Si no hay ninguna, se guarda directamente.
+   */
+  async function saveSchedule(confirm: boolean) {
+    if (!selectedDate || !selectedInstructorId) return
+    setSavingSchedule(true)
+    setScheduleError('')
+
+    const res = await fetch('/api/horarios/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instructorId: selectedInstructorId,
+        date: selectedDate,
+        sessions: formSessions,
+        breakMinutes: formBreak,
+        reason: formReason.trim() || null,
+        confirm,
+      }),
+    })
+
+    const data = await res.json().catch(() => ({}))
+    setSavingSchedule(false)
+
+    if (!res.ok) {
+      setScheduleError(data.error ?? 'No se pudo guardar el horario')
+      return
+    }
+
+    if (data.preview) {
+      if ((data.affected ?? []).length === 0) {
+        await saveSchedule(true)
+        return
+      }
+      setAffected(data.affected)
+      return
+    }
+
+    setAffected(null)
+    setEditingSchedule(false)
+    await fetchData()
+  }
+
+  async function removeSchedule(dateStr: string) {
+    if (!selectedInstructorId) return
+    setSavingSchedule(true)
+    await fetch('/api/horarios/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instructorId: selectedInstructorId, date: dateStr, remove: true }),
+    })
+    setSavingSchedule(false)
+    setEditingSchedule(false)
+    await fetchData()
   }
 
   function isBlockedDay(dateStr: string) {
@@ -103,6 +202,9 @@ export default function FestivosPage() {
     setBlockStart('')
     setBlockEnd('')
     setBlockReason('')
+    setEditingSchedule(false)
+    setAffected(null)
+    setScheduleError('')
   }
 
   function switchInstructor(id: string) {
@@ -555,10 +657,249 @@ export default function FestivosPage() {
                   )}
                 </div>
 
+                {/* Sección 3: Horario especial de este día */}
+                {!isBlockedDay(selectedDate) && (() => {
+                  const current = overrideFor(selectedDate)
+                  const habitual = getInstructorSessions(selectedInstructor)
+
+                  return (
+                    <div className="rounded-2xl overflow-hidden" style={{ background: '#0d1829', border: `1px solid ${current ? '#0057B840' : '#1a2d45'}` }}>
+                      <div className="px-5 py-3 flex items-center justify-between" style={{ background: '#0a1220', borderBottom: '1px solid #1a2d45' }}>
+                        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#0057B8' }}>🕐 Horario de este día</p>
+                        {current && !editingSchedule && (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: '#0057B820', color: '#0057B8' }}>
+                            Especial
+                          </span>
+                        )}
+                      </div>
+
+                      {!editingSchedule ? (
+                        <div className="px-5 py-4 space-y-3">
+                          <div className="flex flex-wrap gap-2">
+                            {(current?.sessions ?? habitual).map((s, i) => (
+                              <span
+                                key={i}
+                                className="text-sm font-bold px-3 py-1.5 rounded-lg"
+                                style={{
+                                  background: current ? '#0057B820' : '#0a1220',
+                                  color: current ? '#4d9ff5' : '#a0b8d0',
+                                  border: `1px solid ${current ? '#0057B840' : '#1a2d45'}`,
+                                }}
+                              >
+                                {s.start} – {s.end}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="text-xs" style={{ color: '#3a5070' }}>
+                            Descanso entre prácticas:{' '}
+                            <span className="font-bold" style={{ color: '#6b8ab0' }}>
+                              {current?.break_minutes ?? selectedInstructor?.break_minutes ?? 10} min
+                            </span>
+                            {current?.reason && <> · {current.reason}</>}
+                          </p>
+                          {!current && (
+                            <p className="text-xs" style={{ color: '#3a5070' }}>
+                              Es su horario de siempre. Cámbialo solo para este día si entra antes, sale más tarde o acorta los descansos.
+                            </p>
+                          )}
+
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              onClick={() => startEditingSchedule(selectedDate)}
+                              className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition"
+                              style={{ background: '#0057B8' }}
+                              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
+                              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0057B8'}
+                            >
+                              {current ? 'Modificar' : 'Cambiar solo este día'}
+                            </button>
+                            {current && (
+                              <button
+                                onClick={() => removeSchedule(selectedDate)}
+                                disabled={savingSchedule}
+                                className="px-4 py-2.5 rounded-xl text-xs font-bold transition"
+                                style={{ color: '#6b8ab0', border: '1px solid #1a2d45' }}
+                              >
+                                Volver al normal
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="px-5 py-4 space-y-4">
+                          <div className="space-y-2">
+                            {formSessions.map((s, i) => (
+                              <div key={i} className="flex items-center gap-2">
+                                <input
+                                  type="time"
+                                  value={s.start}
+                                  onChange={e => setFormSessions(f => f.map((x, j) => j === i ? { ...x, start: e.target.value } : x))}
+                                  className="flex-1 rounded-xl px-3 py-2 text-white text-sm outline-none"
+                                  style={{ background: '#0a1220', border: '1.5px solid #1a2d45' }}
+                                />
+                                <span className="text-xs" style={{ color: '#3a5070' }}>a</span>
+                                <input
+                                  type="time"
+                                  value={s.end}
+                                  onChange={e => setFormSessions(f => f.map((x, j) => j === i ? { ...x, end: e.target.value } : x))}
+                                  className="flex-1 rounded-xl px-3 py-2 text-white text-sm outline-none"
+                                  style={{ background: '#0a1220', border: '1.5px solid #1a2d45' }}
+                                />
+                                <button
+                                  onClick={() => setFormSessions(f => f.filter((_, j) => j !== i))}
+                                  disabled={formSessions.length === 1}
+                                  className="px-2.5 py-2 rounded-lg text-xs font-bold transition flex-shrink-0"
+                                  style={{
+                                    color: formSessions.length === 1 ? '#1a2d45' : '#f87171',
+                                    border: '1px solid #1a2d45',
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                            <button
+                              onClick={() => setFormSessions(f => [...f, { start: '16:00', end: '19:00' }])}
+                              className="w-full py-2 rounded-xl text-xs font-bold transition"
+                              style={{ color: '#6b8ab0', border: '1px dashed #1a2d45' }}
+                            >
+                              + Añadir franja
+                            </button>
+                            {/* El hueco entre dos franjas es descanso: así se monta el café de media hora
+                                sin tener que configurar nada aparte. */}
+                            <p className="text-xs" style={{ color: '#3a5070' }}>
+                              El tiempo entre una franja y la siguiente es descanso.
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-xs font-semibold mb-2" style={{ color: '#6b8ab0' }}>Descanso entre prácticas</p>
+                            <div className="flex gap-2 flex-wrap">
+                              {[null, 0, 5, 10, 15, 20, 30].map(mins => (
+                                <button
+                                  key={String(mins)}
+                                  onClick={() => setFormBreak(mins)}
+                                  className="px-3 py-2 rounded-lg text-xs font-bold transition"
+                                  style={{
+                                    background: formBreak === mins ? '#0057B820' : '#0a1220',
+                                    border: `2px solid ${formBreak === mins ? '#0057B8' : '#1a2d45'}`,
+                                    color: formBreak === mins ? '#0057B8' : '#3a5070',
+                                  }}
+                                >
+                                  {mins === null ? 'El de siempre' : mins === 0 ? 'Sin descanso' : `${mins} min`}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <input
+                            type="text"
+                            value={formReason}
+                            onChange={e => setFormReason(e.target.value)}
+                            placeholder="Motivo (ej: Fiestas, asunto familiar...)"
+                            className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
+                            style={{ background: '#0a1220', border: '1.5px solid #1a2d45' }}
+                          />
+
+                          {scheduleError && (
+                            <p className="text-xs px-3 py-2 rounded-lg" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>
+                              {scheduleError}
+                            </p>
+                          )}
+
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => { setEditingSchedule(false); setAffected(null) }}
+                              disabled={savingSchedule}
+                              className="flex-1 py-2.5 rounded-xl text-sm font-bold transition"
+                              style={{ background: '#0a1220', color: '#6b8ab0', border: '1px solid #1a2d45' }}
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              onClick={() => saveSchedule(false)}
+                              disabled={savingSchedule}
+                              className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition"
+                              style={{ background: '#0057B8', opacity: savingSchedule ? 0.6 : 1 }}
+                            >
+                              {savingSchedule ? 'Comprobando...' : 'Guardar horario'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+
               </div>
             )}
           </div>
         </div>
+      )}
+
+      {/* ── AVISO: clases que se pierden con el nuevo horario ── */}
+      {/* No se guarda nada hasta que alguien ve exactamente qué alumnos se quedan sin clase. */}
+      {affected && affected.length > 0 && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            style={{ background: 'rgba(0,0,0,0.7)' }}
+            onClick={() => { if (!savingSchedule) setAffected(null) }}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div
+              className="w-full max-w-md rounded-2xl overflow-hidden pointer-events-auto"
+              style={{ background: '#0d1829', border: '2px solid #dc2626' }}
+            >
+              <div className="px-5 py-4" style={{ background: 'rgba(220,38,38,0.12)', borderBottom: '1px solid rgba(220,38,38,0.3)' }}>
+                <p className="font-black text-lg" style={{ color: '#f87171' }}>
+                  ⚠️ Se cancelarán {affected.length} {affected.length === 1 ? 'clase' : 'clases'}
+                </p>
+                <p className="text-xs mt-1" style={{ color: '#fca5a5' }}>
+                  Con este horario estos alumnos se quedan fuera de tu jornada
+                </p>
+              </div>
+
+              <div className="max-h-64 overflow-y-auto">
+                {affected.map(b => (
+                  <div key={b.id} className="px-5 py-3 flex items-center gap-3" style={{ borderBottom: '1px solid #0f1c2e' }}>
+                    <p className="text-sm font-black font-mono w-24 flex-shrink-0" style={{ color: '#f87171' }}>
+                      {b.time}–{b.endTime}
+                    </p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-white truncate">{b.studentName}</p>
+                      <p className="text-xs" style={{ color: '#3a5070' }}>{b.practiceLabel}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="px-5 py-4 space-y-3" style={{ borderTop: '1px solid #1a2d45' }}>
+                <p className="text-xs" style={{ color: '#6b8ab0' }}>
+                  Se les avisará por email y podrán reservar otro hueco. No se les descuenta ninguna práctica.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setAffected(null)}
+                    disabled={savingSchedule}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold transition"
+                    style={{ background: '#0a1220', color: '#6b8ab0', border: '1px solid #1a2d45' }}
+                  >
+                    No, dejarlo como está
+                  </button>
+                  <button
+                    onClick={() => saveSchedule(true)}
+                    disabled={savingSchedule}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition"
+                    style={{ background: '#dc2626', opacity: savingSchedule ? 0.6 : 1 }}
+                  >
+                    {savingSchedule ? 'Guardando...' : 'Sí, cambiar horario'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
