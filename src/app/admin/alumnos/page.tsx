@@ -249,7 +249,7 @@ export default function AlumnosPage() {
             <table className="w-full">
               <thead>
                 <tr style={{ borderBottom: '1px solid #1a2d45' }}>
-                  {['#', 'Alumno', 'DNI', 'Prácticas', 'Instructor', 'Alta', ''].map(h => (
+                  {['#', 'Alumno', 'DNI', 'Prácticas', 'Profesor', 'Alta', ''].map(h => (
                     <th key={h} className="text-left px-5 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: '#3a5070' }}>{h}</th>
                   ))}
                 </tr>

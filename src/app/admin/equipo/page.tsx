@@ -9,7 +9,7 @@ type StaffMember = Staff & { instructor: Instructor | null }
 
 const ROLE_CONFIG: Record<StaffRole, { label: string; bg: string; color: string }> = {
   admin:      { label: 'Admin',      bg: 'rgba(0,87,184,0.15)',    color: '#4d9ff5' },
-  instructor: { label: 'Instructor', bg: 'rgba(52,211,153,0.1)',   color: '#34d399' },
+  instructor: { label: 'Profesor',   bg: 'rgba(52,211,153,0.1)',   color: '#34d399' },
   secretary:  { label: 'Secretaria', bg: 'rgba(167,139,250,0.12)', color: '#a78bfa' },
 }
 
@@ -862,7 +862,7 @@ export default function EquipoPage() {
                         {/* Formulario — notas */}
                         {editingNotesId === member.id && (
                           <div className="rounded-xl p-4 space-y-3" style={{ background: '#0a1220', border: '1px solid #1a2d45' }}>
-                            <p className="text-xs font-semibold" style={{ color: '#6b8ab0' }}>Notas internas del instructor</p>
+                            <p className="text-xs font-semibold" style={{ color: '#6b8ab0' }}>Notas internas del profesor</p>
                             <textarea
                               value={notesInput}
                               onChange={e => setNotesInput(e.target.value)}
@@ -1040,7 +1040,7 @@ export default function EquipoPage() {
           <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <p className="text-xs leading-relaxed" style={{ color: '#3a5070' }}>
-          Los <span style={{ color: '#6b8ab0' }}>instructores</span> pueden ver el calendario y gestionar sus alumnos.
+          Los <span style={{ color: '#6b8ab0' }}>profesores</span> pueden ver el calendario y gestionar sus alumnos.
           Las <span style={{ color: '#6b8ab0' }}>secretarias</span> gestionan alumnos, pagos y el tablón de asignación.
           Los <span style={{ color: '#6b8ab0' }}>admins</span> tienen acceso completo. No puedes cambiar tu propio rol ni desactivar tu propia cuenta,
           y la autoescuela siempre debe tener al menos un admin activo.

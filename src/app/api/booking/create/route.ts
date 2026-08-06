@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
 
   if (blockedDay) {
-    return NextResponse.json({ error: 'Este día está bloqueado. El instructor no está disponible.' }, { status: 409 })
+    return NextResponse.json({ error: 'Este día está bloqueado. El profesor no está disponible.' }, { status: 409 })
   }
 
   // Comprobar límite diario

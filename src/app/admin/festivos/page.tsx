@@ -236,7 +236,7 @@ export default function FestivosPage() {
 
       {!selectedInstructorId ? (
         <div className="rounded-2xl p-12 text-center" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
-          <p className="text-white font-semibold">Cargando instructores...</p>
+          <p className="text-white font-semibold">Cargando profesores...</p>
         </div>
       ) : (
         <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 1fr' }}>

@@ -102,7 +102,7 @@ export default function InstructorPage() {
     <div className="p-8">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <p className="text-sm font-medium mb-1" style={{ color: '#0057B8' }}>Panel de instructor</p>
+          <p className="text-sm font-medium mb-1" style={{ color: '#0057B8' }}>Panel de profesor</p>
           <h1 className="text-3xl font-black text-white tracking-tight">{getDayName(today)}</h1>
           <p className="text-sm mt-1" style={{ color: '#6b8ab0' }}>{formatDate(today)}{instructorName ? ` · ${instructorName}` : ''}</p>
         </div>
@@ -147,7 +147,7 @@ export default function InstructorPage() {
         <div className="text-sm" style={{ color: '#6b8ab0' }}>Cargando...</div>
       ) : !instructorId ? (
         <div className="rounded-2xl p-12 text-center" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
-          <p className="text-white font-semibold">Sin instructor asignado</p>
+          <p className="text-white font-semibold">Sin profesor asignado</p>
           <p className="text-sm mt-1" style={{ color: '#6b8ab0' }}>Pide al administrador que vincule tu cuenta</p>
         </div>
       ) : tab === 'today' ? (

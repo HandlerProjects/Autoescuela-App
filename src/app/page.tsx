@@ -107,7 +107,7 @@ export default function LandingPage() {
                 </div>
                 <div className="flex-1">
                   <p className="text-white font-black text-base leading-none">Personal de la autoescuela</p>
-                  <p className="text-sm mt-1" style={{ color: '#3a5070' }}>Instructores · Secretaría · Administración</p>
+                  <p className="text-sm mt-1" style={{ color: '#3a5070' }}>Profesores · Secretaría · Administración</p>
                 </div>
                 <svg className="w-5 h-5 flex-shrink-0" style={{ color: '#3a5070' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -132,7 +132,7 @@ export default function LandingPage() {
             </button>
 
             <h2 className="text-2xl font-black text-white mb-1">Acceso personal</h2>
-            <p className="text-sm mb-8" style={{ color: '#6b8ab0' }}>Instructores, secretaría y administración</p>
+            <p className="text-sm mb-8" style={{ color: '#6b8ab0' }}>Profesores, secretaría y administración</p>
 
             <div className="space-y-4">
               <div>

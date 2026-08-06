@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   const bookingUrl = `${APP_URL}/s/${student.token}`
 
   const content = `
-    <p style="margin:0 0 6px;color:#0057B8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Ya tienes instructor</p>
+    <p style="margin:0 0 6px;color:#0057B8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Ya tienes profesor</p>
     <h1 style="margin:0 0 16px;color:#0a0f1a;font-size:23px;font-weight:900">¡Hola, ${firstName}!</h1>
     <p style="margin:0 0 8px;color:#4a6080;font-size:15px;line-height:1.7">
       <strong>${instructorName}</strong> te ha elegido como alumno en Auto-Escuela Bahillo.

@@ -192,7 +192,7 @@ export default function CuadrantePage() {
         <div>
           <p className="text-sm font-medium mb-1" style={{ color: '#0057B8' }}>Gestión</p>
           <h1 className="text-3xl font-black text-white tracking-tight">Cuadrante de horas</h1>
-          <p className="text-sm mt-1" style={{ color: '#6b8ab0' }}>Horas de práctica y descanso por instructor</p>
+          <p className="text-sm mt-1" style={{ color: '#6b8ab0' }}>Horas de práctica y descanso por profesor</p>
         </div>
         <div className="flex items-center gap-3">
           {/* Toggle vista */}

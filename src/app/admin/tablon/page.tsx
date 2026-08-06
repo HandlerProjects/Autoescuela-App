@@ -117,7 +117,7 @@ export default function AdminTablonPage() {
           <p className="text-sm font-semibold mb-1" style={{ color: '#0057B8' }}>Administración</p>
           <h1 className="text-3xl font-black text-white tracking-tight">Tablón de alumnos</h1>
           <p className="text-sm mt-1.5" style={{ color: '#6b8ab0' }}>
-            Alumnos en espera de instructor · se actualiza cada 30s
+            Alumnos en espera de profesor · se actualiza cada 30s
           </p>
         </div>
         {counts.all > 0 && (
@@ -269,7 +269,7 @@ export default function AdminTablonPage() {
                     onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#004494'}
                     onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0057B8'}
                   >
-                    Asignar instructor
+                    Asignar profesor
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                     </svg>

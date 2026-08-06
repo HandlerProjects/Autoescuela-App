@@ -162,7 +162,7 @@ export default function TablonPage() {
         </div>
       ) : !instructorId ? (
         <div className="rounded-2xl p-12 text-center" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
-          <p className="text-white font-semibold">Sin instructor asignado</p>
+          <p className="text-white font-semibold">Sin profesor asignado</p>
           <p className="text-sm mt-1" style={{ color: '#6b8ab0' }}>Pide al administrador que vincule tu cuenta</p>
         </div>
       ) : filtered.length === 0 ? (

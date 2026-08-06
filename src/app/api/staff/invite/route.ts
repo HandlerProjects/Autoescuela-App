@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       console.error('Error creando instructor en DB:', instructorError)
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
       return NextResponse.json(
-        { error: 'No se pudo guardar el instructor: ' + instructorError.message },
+        { error: 'No se pudo guardar el profesor: ' + instructorError.message },
         { status: 500 }
       )
     }

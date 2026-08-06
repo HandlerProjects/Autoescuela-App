@@ -165,7 +165,7 @@ export default function CalendarioPage() {
                 className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition"
                 style={{ background: '#0d1829', border: '1px solid #1a2d45', color: 'white' }}
               >
-                {instructors.find(i => i.id === selectedInstructorId)?.name ?? 'Selecciona instructor'}
+                {instructors.find(i => i.id === selectedInstructorId)?.name ?? 'Selecciona profesor'}
                 <svg className="w-3 h-3 flex-shrink-0 transition-transform" style={{ color: '#6b8ab0', transform: instructorMenuOpen ? 'rotate(180deg)' : 'none' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                 </svg>

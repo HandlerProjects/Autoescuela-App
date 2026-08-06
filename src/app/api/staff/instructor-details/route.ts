@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (targetError || !target || target.role !== 'instructor') {
-    return NextResponse.json({ error: 'El miembro no es un instructor' }, { status: 403 })
+    return NextResponse.json({ error: 'El miembro no es un profesor' }, { status: 403 })
   }
 
   const updates: Record<string, unknown> = {}

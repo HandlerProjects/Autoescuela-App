@@ -8,9 +8,11 @@ import { useState, useEffect } from 'react'
 const INSTRUCTOR_ROUTES = ['/admin', '/admin/calendario', '/admin/alumnos', '/admin/tablon', '/admin/examenes', '/admin/alertas', '/admin/festivos']
 const SECRETARY_ROUTES = ['/admin', '/admin/alumnos', '/admin/tablon', '/admin/pagos', '/admin/alertas', '/admin/cuadrante', '/admin/examenes']
 
+// El rol sigue llamándose `instructor` en la base de datos y en todo el código; aquí solo se
+// traduce a la palabra que usa la autoescuela en su día a día (petición del dueño).
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin',
-  instructor: 'Instructor',
+  instructor: 'Profesor',
   secretary: 'Secretaria',
 }
 
@@ -274,12 +276,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* ── TOPBAR — solo móvil ── */}
+      {/* Chrome en Android deja de repintar los elementos `fixed` mientras colapsa/expande su
+          barra de direcciones, y la barra desaparecía hasta que se tocaba la pantalla (en iOS no
+          pasa). Forzarla a su propia capa de composición (translateZ + willChange) hace que el
+          navegador la componga aparte del scroll y deje de parpadear. */}
       <header
         className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4"
         style={{
           background: '#0d1829',
           borderBottom: '1px solid #1a2d45',
           height: '56px',
+          transform: 'translateZ(0)',
+          willChange: 'transform',
+          backfaceVisibility: 'hidden',
         }}
       >
         <div className="flex items-center gap-3">

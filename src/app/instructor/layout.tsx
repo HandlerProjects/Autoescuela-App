@@ -96,7 +96,7 @@ export default function InstructorLayout({ children }: { children: React.ReactNo
         </nav>
 
         <div className="px-3 py-4" style={{ borderTop: '1px solid #1a2d45' }}>
-          <p className="text-xs font-bold text-white px-3 mb-0.5">Instructor</p>
+          <p className="text-xs font-bold text-white px-3 mb-0.5">Profesor</p>
           <p className="text-xs px-3 mb-3" style={{ color: '#3a5070' }}>Panel de práctica</p>
           <button
             onClick={handleLogout}

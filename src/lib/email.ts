@@ -107,7 +107,7 @@ export type StaffRole = 'admin' | 'instructor' | 'secretary'
 
 const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
   admin: 'administrador',
-  instructor: 'instructor',
+  instructor: 'profesor',
   secretary: 'secretaria',
 }
 

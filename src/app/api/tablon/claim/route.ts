@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   if (!claimed || claimed.length === 0) {
-    return NextResponse.json({ error: 'Este alumno ya fue reclamado por otro instructor' }, { status: 409 })
+    return NextResponse.json({ error: 'Este alumno ya fue reclamado por otro profesor' }, { status: 409 })
   }
 
   // Devolver nombre del instructor para la notificación al alumno

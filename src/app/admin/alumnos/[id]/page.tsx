@@ -82,7 +82,7 @@ export default function AlumnoPerfilPage() {
     })
     const data = await res.json()
     if (!res.ok || data.error) {
-      alert(data.error ?? 'No se pudo cambiar el instructor')
+      alert(data.error ?? 'No se pudo cambiar el profesor')
       setSavingInstructor(false)
       return
     }
@@ -246,7 +246,7 @@ export default function AlumnoPerfilPage() {
           {/* Instructor asignado */}
           <div className="rounded-2xl p-5" style={{ background: '#0d1829', border: `1px solid ${instructorName ? '#0057B840' : '#1a2d45'}` }}>
             <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#0057B8' }}>Instructor</p>
+              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#0057B8' }}>Profesor</p>
               {(currentUserRole === 'admin' || currentUserRole === 'secretary') && !editInstructor && (
                 <button
                   onClick={() => { setEditInstructor(true); setSelectedInstructorId(student.instructor_id ?? '') }}
@@ -297,7 +297,7 @@ export default function AlumnoPerfilPage() {
                 </div>
                 <div>
                   <p className="text-white font-bold text-sm">{instructorName}</p>
-                  <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>Instructor asignado</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#3a5070' }}>Profesor asignado</p>
                 </div>
               </div>
             ) : (
