@@ -8,6 +8,33 @@ import type { Booking, BlockedSlot, PracticeType, PracticeSubtype, Instructor } 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
+// Los mismos que ofrece la pantalla del alumno, para que las recogidas no se escriban de dos
+// formas distintas según quién apunte la práctica.
+const PICKUP_LOCATIONS = [
+  'Estación de autobuses · Jardinillos',
+  'Av. Ramón Carande · frente al Bar Roma',
+]
+
+interface StudentOption {
+  id: string
+  full_name: string
+  order_number: number
+  instructor_id: string | null
+  practice_types: PracticeType[]
+}
+
+interface FreeSlot {
+  date: string
+  time: string
+  type: PracticeType
+  subtype: PracticeSubtype | null
+}
+
+// Una fila de la agenda del día: o la ocupa una práctica, o está libre.
+type AgendaRow =
+  | { kind: 'booked'; time: string; booking: Booking }
+  | { kind: 'free'; time: string; type: PracticeType; subtype: PracticeSubtype | null }
+
 function getDaysInMonth(year: number, month: number) {
   return new Date(year, month + 1, 0).getDate()
 }
@@ -39,8 +66,17 @@ export default function CalendarioPage() {
   const [selectedInstructorId, setSelectedInstructorId] = useState('')
   const [instructorMenuOpen, setInstructorMenuOpen] = useState(false)
 
+  // Alta manual de prácticas: para alumnos que no reservan desde el móvil y avisan por teléfono
+  // o en el mostrador.
+  const [students, setStudents] = useState<StudentOption[]>([])
+  const [assigning, setAssigning] = useState<FreeSlot | null>(null)
+  const [assignStudentId, setAssignStudentId] = useState('')
+  const [assignPickup, setAssignPickup] = useState('')
+  const [assignSaving, setAssignSaving] = useState(false)
+  const [assignError, setAssignError] = useState('')
+
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { fetchMe(); fetchInstructors() }, [])
+  useEffect(() => { fetchMe(); fetchInstructors(); fetchStudents() }, [])
 
   // Auto-selección del primer instructor (por created_at ascendente, como ya los devuelve
   // /api/profesores/list) en cuanto sabemos que el rol es admin y ya cargó la lista.
@@ -66,6 +102,14 @@ export default function CalendarioPage() {
       // Un profesor no pasa por el selector (solo ve su propio calendario), pero igualmente hay
       // que saber quién es para generar los huecos con SU horario y no con el genérico.
       if (data.role === 'instructor' && data.id) setSelectedInstructorId(data.id)
+    }
+  }
+
+  async function fetchStudents() {
+    const res = await fetch('/api/alumnos/list')
+    if (res.ok) {
+      const data = await res.json()
+      setStudents(data.students ?? [])
     }
   }
 
@@ -153,6 +197,71 @@ export default function CalendarioPage() {
       ...freeOf('truck', 'circulacion'),
       ...freeOf('moto', null),
     ].sort((a, b) => a.time.localeCompare(b.time))
+  }
+
+  /**
+   * Agenda completa del día, hora a hora: las prácticas apuntadas y los huecos que quedan,
+   * mezclados en orden. Antes solo se listaban los huecos libres, así que en el listado de
+   * abajo no se veía a qué hora tenía alumno el profesor.
+   */
+  function getDayAgenda(dateStr: string): AgendaRow[] {
+    const booked: AgendaRow[] = bookings
+      .filter(b => {
+        if (b.practice_date !== dateStr) return false
+        if (b.status === 'cancelled') return false
+        return filter === 'all' || b.practice_type === filter
+      })
+      .map(b => ({ kind: 'booked' as const, time: b.start_time.substring(0, 5), booking: b }))
+
+    const free: AgendaRow[] = getFreeSlots(dateStr)
+      .map(s => ({ kind: 'free' as const, time: s.time, type: s.type, subtype: s.subtype }))
+
+    return [...booked, ...free].sort((a, b) => a.time.localeCompare(b.time))
+  }
+
+  function openAssign(slot: FreeSlot) {
+    setAssigning(slot)
+    setAssignStudentId('')
+    setAssignPickup('')
+    setAssignError('')
+  }
+
+  async function confirmAssign() {
+    if (!assigning || !assignStudentId) return
+    setAssignSaving(true)
+    setAssignError('')
+
+    const res = await fetch('/api/booking/asignar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        studentId: assignStudentId,
+        instructorId: selectedInstructorId || undefined,
+        date: assigning.date,
+        startTime: assigning.time,
+        practiceType: assigning.type,
+        practiceSubtype: assigning.subtype,
+        pickupLocation: assignPickup || null,
+      }),
+    })
+
+    if (res.ok) {
+      setAssigning(null)
+      await fetchData()
+    } else {
+      const data = await res.json().catch(() => ({}))
+      setAssignError(data.error ?? 'No se pudo apuntar la práctica')
+    }
+    setAssignSaving(false)
+  }
+
+  // Solo alumnos de este profesor que hagan ese tipo de práctica: evita ofrecer en el desplegable
+  // a alguien a quien luego el servidor va a rechazar.
+  function candidatesFor(slot: FreeSlot): StudentOption[] {
+    return students.filter(s =>
+      (!selectedInstructorId || s.instructor_id === selectedInstructorId) &&
+      (s.practice_types ?? []).includes(slot.type)
+    )
   }
 
   function prevMonth() {
@@ -521,41 +630,71 @@ export default function CalendarioPage() {
                   )
                 })()}
 
-                {/* SLOTS LIBRES (solo si el día no está bloqueado completo) */}
+                {/* AGENDA DEL DÍA — todas las horas, ocupadas y libres (si el día no está bloqueado) */}
                 {!blockedDays.includes(selectedDate) && (() => {
-                  const free = getFreeSlots(selectedDate)
-                  const morning = free.filter(s => s.time < '14:00')
-                  const afternoon = free.filter(s => s.time >= '14:00')
+                  const agenda = getDayAgenda(selectedDate)
+                  const tramos: [string, AgendaRow[]][] = [
+                    ['Mañana', agenda.filter(r => r.time < '14:00')],
+                    ['Tarde', agenda.filter(r => r.time >= '14:00')],
+                  ]
+
                   return (
                     <>
-                      {morning.length > 0 && (
-                        <div>
+                      {tramos.map(([label, filas]) => filas.length === 0 ? null : (
+                        <div key={label}>
                           <div className="px-5 py-2" style={{ background: '#0a1220', borderBottom: '1px solid #1a2d45' }}>
-                            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#3a5070' }}>Libres · Mañana</p>
+                            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#3a5070' }}>
+                              Agenda · {label}
+                            </p>
                           </div>
-                          {morning.map(({ time, type, subtype }) => (
-                            <div key={`${time}-${type}-${subtype}`} className="px-5 py-2.5 flex items-center gap-3" style={{ borderBottom: '1px solid #0f1c2e' }}>
-                              <p className="text-xs font-mono w-12 flex-shrink-0" style={{ color: '#5a7699' }}>{time}</p>
-                              <div className="w-px h-5 flex-shrink-0" style={{ background: '#1a2d45' }} />
-                              <p className="text-xs flex-1" style={{ color: '#5a7699' }}>Libre · {getPracticeLabel(type, subtype)}</p>
-                            </div>
-                          ))}
+
+                          {filas.map(row => {
+                            if (row.kind === 'booked') {
+                              const b = row.booking
+                              const type = b.practice_type as PracticeType
+                              return (
+                                <div
+                                  key={`b-${b.id}`}
+                                  className="px-5 py-2.5 flex items-center gap-3"
+                                  style={{ borderBottom: '1px solid #0f1c2e', background: '#0d1829' }}
+                                >
+                                  <p className="text-xs font-black font-mono w-12 flex-shrink-0" style={{ color: '#a0b8d0' }}>{row.time}</p>
+                                  <div
+                                    className="w-1 h-5 rounded-full flex-shrink-0"
+                                    style={{ background: type === 'car' ? '#0057B8' : type === 'moto' ? '#a78bfa' : '#38bdf8' }}
+                                  />
+                                  <p className="text-xs font-bold text-white flex-1 truncate">
+                                    {b.student?.full_name ?? '—'}
+                                  </p>
+                                  <span className="text-xs flex-shrink-0" style={{ color: '#3a5070' }}>
+                                    {getPracticeLabel(type, b.practice_subtype)}
+                                  </span>
+                                </div>
+                              )
+                            }
+
+                            // Hueco libre: se puede apuntar un alumno a mano desde aquí.
+                            const slot: FreeSlot = { date: selectedDate, time: row.time, type: row.type, subtype: row.subtype }
+                            return (
+                              <button
+                                key={`f-${row.time}-${row.type}-${row.subtype}`}
+                                onClick={() => openAssign(slot)}
+                                className="w-full px-5 py-2.5 flex items-center gap-3 transition text-left"
+                                style={{ borderBottom: '1px solid #0f1c2e' }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#0f1c2e'}
+                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+                              >
+                                <p className="text-xs font-mono w-12 flex-shrink-0" style={{ color: '#5a7699' }}>{row.time}</p>
+                                <div className="w-px h-5 flex-shrink-0" style={{ background: '#1a2d45' }} />
+                                <p className="text-xs flex-1" style={{ color: '#5a7699' }}>
+                                  Libre · {getPracticeLabel(row.type, row.subtype)}
+                                </p>
+                                <span className="text-xs font-bold flex-shrink-0" style={{ color: '#0057B8' }}>+ Apuntar</span>
+                              </button>
+                            )
+                          })}
                         </div>
-                      )}
-                      {afternoon.length > 0 && (
-                        <div>
-                          <div className="px-5 py-2" style={{ background: '#0a1220', borderBottom: '1px solid #1a2d45' }}>
-                            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#3a5070' }}>Libres · Tarde</p>
-                          </div>
-                          {afternoon.map(({ time, type, subtype }) => (
-                            <div key={`${time}-${type}-${subtype}`} className="px-5 py-2.5 flex items-center gap-3" style={{ borderBottom: '1px solid #0f1c2e' }}>
-                              <p className="text-xs font-mono w-12 flex-shrink-0" style={{ color: '#5a7699' }}>{time}</p>
-                              <div className="w-px h-5 flex-shrink-0" style={{ background: '#1a2d45' }} />
-                              <p className="text-xs flex-1" style={{ color: '#5a7699' }}>Libre · {getPracticeLabel(type, subtype)}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                      ))}
                     </>
                   )
                 })()}
@@ -595,6 +734,94 @@ export default function CalendarioPage() {
           )}
         </div>
       </div>
+
+      {/* ── APUNTAR PRÁCTICA A MANO ── */}
+      {assigning && (() => {
+        const candidatos = candidatesFor(assigning)
+        return (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              style={{ background: 'rgba(0,0,0,0.65)' }}
+              onClick={() => { if (!assignSaving) setAssigning(null) }}
+            />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+              <div
+                className="w-full max-w-sm rounded-2xl p-6 pointer-events-auto"
+                style={{ background: '#0d1829', border: '1px solid #1a2d45' }}
+              >
+                <p className="text-white font-black text-lg mb-1">Apuntar práctica</p>
+                <p className="text-sm mb-5" style={{ color: '#6b8ab0' }}>
+                  {getDayName(assigning.date)} {formatDate(assigning.date)} · <span className="font-mono font-bold text-white">{assigning.time}</span> · {getPracticeLabel(assigning.type, assigning.subtype)}
+                </p>
+
+                {candidatos.length === 0 ? (
+                  <p className="text-xs mb-5 px-3 py-2.5 rounded-lg" style={{ background: 'rgba(251,191,36,0.1)', color: '#fbbf24' }}>
+                    Este profesor no tiene alumnos de {getPracticeLabel(assigning.type, assigning.subtype)}.
+                  </p>
+                ) : (
+                  <>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: '#a0b8d0' }}>Alumno</label>
+                    <select
+                      value={assignStudentId}
+                      onChange={e => setAssignStudentId(e.target.value)}
+                      className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none mb-4"
+                      style={{ background: '#0a1220', border: '1.5px solid #1a2d45' }}
+                    >
+                      <option value="">Selecciona un alumno</option>
+                      {candidatos.map(s => (
+                        <option key={s.id} value={s.id}>#{s.order_number} · {s.full_name}</option>
+                      ))}
+                    </select>
+
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: '#a0b8d0' }}>Lugar de recogida</label>
+                    <select
+                      value={assignPickup}
+                      onChange={e => setAssignPickup(e.target.value)}
+                      className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none mb-5"
+                      style={{ background: '#0a1220', border: '1.5px solid #1a2d45' }}
+                    >
+                      <option value="">Sin especificar</option>
+                      {PICKUP_LOCATIONS.map(loc => (
+                        <option key={loc} value={loc}>{loc}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
+
+                {assignError && (
+                  <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>
+                    {assignError}
+                  </p>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setAssigning(null)}
+                    disabled={assignSaving}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold transition"
+                    style={{ background: '#0a1220', color: '#6b8ab0', border: '1px solid #1a2d45' }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={confirmAssign}
+                    disabled={assignSaving || !assignStudentId}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition"
+                    style={{
+                      background: !assignStudentId ? '#1a2d45' : '#0057B8',
+                      color: !assignStudentId ? '#3a5070' : 'white',
+                      opacity: assignSaving ? 0.6 : 1,
+                    }}
+                  >
+                    {assignSaving ? 'Apuntando...' : 'Apuntar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )
+      })()}
     </div>
   )
 }

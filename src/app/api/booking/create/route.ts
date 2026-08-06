@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getBonoStatus, SUSPENDED_MESSAGE } from '@/lib/bono'
+import { validateSlot } from '@/lib/validar-reserva'
 
 export async function POST(req: NextRequest) {
   const {
@@ -41,17 +42,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Solo puedes reservar dentro de los próximos 7 días naturales.' }, { status: 409 })
   }
 
-  // Comprobar que el día no está bloqueado
-  const { data: blockedDay } = await supabaseAdmin
-    .from('blocked_days')
-    .select('id')
-    .eq('instructor_id', student.instructor_id)
-    .eq('date', practiceDate)
-    .limit(1)
-    .maybeSingle()
+  // Día bloqueado, hora dentro del horario del profesor y hueco realmente libre. Antes esto solo
+  // lo garantizaba la pantalla: el servidor aceptaba cualquier hora que le llegara.
+  const slot = await validateSlot(supabaseAdmin, {
+    instructorId: student.instructor_id,
+    date: practiceDate,
+    startTime,
+    practiceType,
+    practiceSubtype: practiceSubtype ?? null,
+  })
 
-  if (blockedDay) {
-    return NextResponse.json({ error: 'Este día está bloqueado. El profesor no está disponible.' }, { status: 409 })
+  if (!slot.ok) {
+    return NextResponse.json({ error: slot.error }, { status: slot.status })
   }
 
   // Comprobar saldo del bono de prácticas. Va antes de los límites de cupo porque es el motivo
