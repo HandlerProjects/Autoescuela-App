@@ -14,7 +14,15 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'car' | 'truck' | 'moto'>('all')
 
-  useEffect(() => { fetchBookings() }, [])
+  useEffect(() => { loadToday() }, [])
+
+  // Antes de pintar el día se cierran las prácticas cuya hora ya ha pasado, para que el panel
+  // no muestre como "Confirmada" una clase de esta mañana. El cron nocturno queda solo como red
+  // de seguridad por si nadie abre el panel en todo el día.
+  async function loadToday() {
+    await fetch('/api/cron/auto-complete').catch(() => {})
+    await fetchBookings()
+  }
 
   async function fetchBookings() {
     setLoading(true)

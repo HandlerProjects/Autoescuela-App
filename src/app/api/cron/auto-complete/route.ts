@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getSessionUser } from '@/lib/auth'
 
 // Cierra automáticamente las prácticas cuya hora ya ha pasado.
 //
@@ -25,9 +26,17 @@ function nowInMadrid(): { date: string; time: string } {
 }
 
 export async function GET(req: NextRequest) {
+  // Dos vías de entrada a propósito:
+  //  - El cron de Vercel, con su secreto, como red de seguridad diaria.
+  //  - Cualquier miembro del equipo, para que al abrir el panel las prácticas que ya han
+  //    terminado aparezcan cerradas al momento en vez de esperar a la noche.
+  // Es una operación acotada por la hora e idempotente, así que llamarla de más no hace daño.
   const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const isCron = authHeader === `Bearer ${process.env.CRON_SECRET}`
+
+  if (!isCron) {
+    const user = await getSessionUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const supabase = createClient(

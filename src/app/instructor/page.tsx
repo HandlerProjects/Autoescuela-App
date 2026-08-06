@@ -16,7 +16,14 @@ export default function InstructorPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'today' | 'upcoming'>('today')
 
-  useEffect(() => { init() }, [])
+  useEffect(() => { loadToday() }, [])
+
+  // Igual que en el panel de admin: se cierran primero las prácticas que ya han terminado, para
+  // que el profesor no vea como "Confirmada" una clase que dio esta mañana.
+  async function loadToday() {
+    await fetch('/api/cron/auto-complete').catch(() => {})
+    await init()
+  }
 
   // Identidad + reservas de hoy y próximos 7 días en una sola llamada server-side
   // (/api/instructor/bookings) — antes eran 2 saltos de red seguidos (auth.me, luego datos).
