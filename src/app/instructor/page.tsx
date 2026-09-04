@@ -48,6 +48,19 @@ export default function InstructorPage() {
     init()
   }
 
+  // Mismo patrón que cancelBooking() en admin/page.tsx.
+  async function cancelBooking(booking: Booking) {
+    await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', booking.id)
+    if (booking.calendar_event_id) {
+      fetch('/api/calendar', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: booking.calendar_event_id }),
+      }).catch(() => {})
+    }
+    init()
+  }
+
   const completedCount = bookings.filter(b => b.status === 'completed').length
 
   function BookingRow({ booking, showDate = false }: { booking: Booking; showDate?: boolean }) {
@@ -91,15 +104,26 @@ export default function InstructorPage() {
           #{(booking.student as any)?.order_number ?? '—'}
         </div>
         {booking.status === 'confirmed' && !showDate && (
-          <button
-            onClick={() => markCompleted(booking)}
-            className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all duration-150"
-            style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(52,211,153,0.2)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'rgba(52,211,153,0.1)'}
-          >
-            ✓ Completar
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => markCompleted(booking)}
+              className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all duration-150"
+              style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(52,211,153,0.2)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'rgba(52,211,153,0.1)'}
+            >
+              ✓ Completar
+            </button>
+            <button
+              onClick={() => cancelBooking(booking)}
+              className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all duration-150"
+              style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.2)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.1)'}
+            >
+              Cancelar
+            </button>
+          </div>
         )}
       </div>
     )
