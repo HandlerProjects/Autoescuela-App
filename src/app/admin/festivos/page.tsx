@@ -307,7 +307,7 @@ export default function FestivosPage() {
   const selectedInstructor = instructors.find(i => i.id === selectedInstructorId)
 
   return (
-    <div className="p-8">
+    <div className="px-4 py-6 md:p-8">
 
       {/* Cabecera */}
       <div className="mb-8">
@@ -341,7 +341,7 @@ export default function FestivosPage() {
           <p className="text-white font-semibold">Cargando profesores...</p>
         </div>
       ) : (
-        <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 1fr' }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
           {/* Calendario */}
           <div className="rounded-2xl overflow-hidden" style={{ background: '#0d1829', border: '1px solid #1a2d45' }}>
